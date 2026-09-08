@@ -26,6 +26,7 @@ import {
   ActivityLogType,
   EmployeeDeviceBinding,
   ActiveMobileSession,
+  LocationPermissionStatus,
 } from '../types';
 import {
   INITIAL_OFFICE_LOCATIONS,
@@ -78,10 +79,14 @@ interface AttendanceContextType {
   leaveRequests: LeaveRequest[];
   permissionRequests: PermissionRequest[];
   
-  // GPS State
+  // GPS & Location Permission State
   currentCoords: GeoCoordinates;
   isUsingRealGPS: boolean;
   gpsError: string | null;
+  locationPermissionStatus: LocationPermissionStatus;
+  hasAcquiredRealGPS: boolean;
+  isLocating: boolean;
+  requestLocationPermission: () => Promise<{ success: boolean; coords?: GeoCoordinates; error?: string }>;
   setManualLocation: (lat: number, lng: number, accuracy?: number) => void;
   enableRealGPS: () => Promise<void>;
   refreshGPSPosition: () => Promise<{ success: boolean; coords?: GeoCoordinates; error?: string }>;
@@ -405,14 +410,100 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   });
   const [isUsingRealGPS, setIsUsingRealGPS] = useState<boolean>(true);
   const [gpsError, setGpsError] = useState<string | null>(null);
+  const [locationPermissionStatus, setLocationPermissionStatus] = useState<LocationPermissionStatus>('checking');
+  const [hasAcquiredRealGPS, setHasAcquiredRealGPS] = useState<boolean>(false);
+  const [isLocating, setIsLocating] = useState<boolean>(false);
 
-  // Auto-acquire and watch device real GPS position
+  // Dedicated device location permission request
+  const requestLocationPermission = useCallback(async (): Promise<{ success: boolean; coords?: GeoCoordinates; error?: string }> => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      const err = 'Geolocation is not supported by this browser or device.';
+      setGpsError(err);
+      setLocationPermissionStatus('unsupported');
+      return { success: false, error: err };
+    }
+
+    setIsLocating(true);
+    setGpsError(null);
+
+    return new Promise((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const freshCoords: GeoCoordinates = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy || 10,
+            timestamp: pos.timestamp,
+          };
+          setCurrentCoords(freshCoords);
+          setIsUsingRealGPS(true);
+          setHasAcquiredRealGPS(true);
+          setLocationPermissionStatus('granted');
+          setGpsError(null);
+          setIsLocating(false);
+          resolve({ success: true, coords: freshCoords });
+        },
+        (err) => {
+          setIsLocating(false);
+          let errMsg = 'Unable to retrieve location.';
+          if (err.code === err.PERMISSION_DENIED) {
+            errMsg = 'Location permission was denied. Please allow location access in your browser settings.';
+            setLocationPermissionStatus('denied');
+          } else if (err.code === err.POSITION_UNAVAILABLE) {
+            errMsg = 'Device location position is unavailable. Please make sure location/GPS is enabled on your phone.';
+          } else if (err.code === err.TIMEOUT) {
+            errMsg = 'Location request timed out. Please tap retry.';
+          } else {
+            errMsg = err.message || errMsg;
+          }
+          setGpsError(errMsg);
+          resolve({ success: false, error: errMsg });
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    });
+  }, []);
+
+  // Auto-check permission state and watch device position
   useEffect(() => {
     if (!navigator.geolocation) {
+      setLocationPermissionStatus('unsupported');
       setGpsError('Geolocation is not supported by this device/browser.');
       return;
     }
 
+    // Check browser permission status if API is available
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: 'geolocation' }).then((result) => {
+        if (result.state === 'granted') {
+          setLocationPermissionStatus('granted');
+          requestLocationPermission();
+        } else if (result.state === 'denied') {
+          setLocationPermissionStatus('denied');
+          setGpsError('Location access is blocked in browser settings. Please allow location to check in.');
+        } else {
+          setLocationPermissionStatus('prompt');
+        }
+
+        result.onchange = () => {
+          if (result.state === 'granted') {
+            setLocationPermissionStatus('granted');
+            requestLocationPermission();
+          } else if (result.state === 'denied') {
+            setLocationPermissionStatus('denied');
+            setGpsError('Location access was denied in browser settings.');
+          } else {
+            setLocationPermissionStatus('prompt');
+          }
+        };
+      }).catch(() => {
+        setLocationPermissionStatus('prompt');
+      });
+    } else {
+      setLocationPermissionStatus('prompt');
+    }
+
+    // Continuous watch position for real-time movement tracking
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         setCurrentCoords({
@@ -422,11 +513,14 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           timestamp: pos.timestamp,
         });
         setIsUsingRealGPS(true);
+        setHasAcquiredRealGPS(true);
+        setLocationPermissionStatus('granted');
         setGpsError(null);
       },
       (err) => {
-        // Fallback or permission denial
-        setGpsError(err.message);
+        if (err.code === err.PERMISSION_DENIED) {
+          setLocationPermissionStatus('denied');
+        }
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
     );
@@ -434,7 +528,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return () => {
       navigator.geolocation.clearWatch(watchId);
     };
-  }, []);
+  }, [requestLocationPermission]);
 
   // ============================================================
   // CLOUD FIRESTORE SYNCHRONIZATION & REALTIME SUBSCRIPTIONS
@@ -1060,39 +1154,11 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   // Real GPS handler & live position refresh
   const refreshGPSPosition = useCallback(async (): Promise<{ success: boolean; coords?: GeoCoordinates; error?: string }> => {
-    if (typeof window === 'undefined' || !navigator.geolocation) {
-      const err = 'Geolocation is not supported by this browser or device.';
-      setGpsError(err);
-      return { success: false, error: err };
-    }
-
-    return new Promise((resolve) => {
-      setGpsError(null);
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const freshCoords: GeoCoordinates = {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            accuracy: pos.coords.accuracy || 10,
-            timestamp: pos.timestamp,
-          };
-          setCurrentCoords(freshCoords);
-          setIsUsingRealGPS(true);
-          setGpsError(null);
-          resolve({ success: true, coords: freshCoords });
-        },
-        (err) => {
-          const errMsg = `GPS: ${err.message || 'Unable to retrieve location'}.`;
-          setGpsError(errMsg);
-          resolve({ success: false, error: errMsg });
-        },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
-      );
-    });
-  }, []);
+    return requestLocationPermission();
+  }, [requestLocationPermission]);
 
   const enableRealGPS = async () => {
-    await refreshGPSPosition();
+    await requestLocationPermission();
   };
 
   const setManualLocation = (lat: number, lng: number, accuracy: number = 8) => {
@@ -2491,6 +2557,10 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         currentCoords,
         isUsingRealGPS,
         gpsError,
+        locationPermissionStatus,
+        hasAcquiredRealGPS,
+        isLocating,
+        requestLocationPermission,
         setManualLocation,
         enableRealGPS,
         refreshGPSPosition,

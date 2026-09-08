@@ -109,6 +109,8 @@ export interface Employee {
   };
 }
 
+export type LocationPermissionStatus = 'prompt' | 'granted' | 'denied' | 'unsupported' | 'checking';
+
 export interface GeoCoordinates {
   latitude: number;
   longitude: number;

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAttendance } from '../context/AttendanceContext';
 import { checkGeofenceStatus, formatDistance, calculateExpectedOutTime } from '../utils/geoUtils';
 import { GeofenceMap } from './GeofenceMap';
+import { LocationPermissionPrompt } from './LocationPermissionPrompt';
 import { PunchFeedbackCard, PunchFeedbackState } from './PunchFeedbackCard';
 import {
   MapPin,
@@ -28,6 +29,8 @@ export const MobileAttendanceTerminal: React.FC = () => {
     currentCoords,
     isUsingRealGPS,
     gpsError,
+    locationPermissionStatus,
+    hasAcquiredRealGPS,
     setManualLocation,
     enableRealGPS,
     markCheckIn,
@@ -158,6 +161,16 @@ export const MobileAttendanceTerminal: React.FC = () => {
 
       {/* Real-time GPS & Geofence Verification Status Card */}
       <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl p-4 sm:p-6 shadow-xs space-y-4">
+        
+        {/* Location Permission Prompt if access needed */}
+        {(locationPermissionStatus !== 'granted' || !hasAcquiredRealGPS) && (
+          <LocationPermissionPrompt
+            variant="card"
+            title="📍 Allow Device Location Access"
+            description="Grant location permission so the mobile terminal can calculate your real distance to the office geofence."
+          />
+        )}
+
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Compass className="w-5 h-5 text-stone-700 animate-spin-slow" />

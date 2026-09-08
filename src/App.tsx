@@ -9,6 +9,7 @@ import { DefinitionsView } from './components/DefinitionsView';
 import { EmployeeLogin } from './components/EmployeeLogin';
 import { EmployeeMobileApp } from './components/EmployeeMobileApp';
 import { useDeviceType } from './hooks/useDeviceType';
+import { LocationPermissionPrompt } from './components/LocationPermissionPrompt';
 import { LogOut } from 'lucide-react';
 
 const MainAppContent: React.FC = () => {
@@ -52,6 +53,9 @@ const MainAppContent: React.FC = () => {
 
       {/* Main Content Area */}
       <div className="flex-1 min-w-0 flex flex-col h-full max-h-full overflow-hidden">
+        {/* Location Permission Top Banner */}
+        <LocationPermissionPrompt variant="banner" />
+
         {/* Desktop Content Canvas Card */}
         <div className="flex-1 flex flex-col bg-[#fcfaf7] rounded-3xl border border-[#ded4c5] shadow-xs overflow-hidden h-full max-h-full min-h-0">
           {/* Desktop Top Header Bar */}

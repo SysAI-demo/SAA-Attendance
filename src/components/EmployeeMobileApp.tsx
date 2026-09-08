@@ -6,6 +6,7 @@ import { WorkHoursBarChart } from './WorkHoursBarChart';
 import { PunchFeedbackCard, PunchFeedbackState } from './PunchFeedbackCard';
 import { PermissionType, LeaveType, LeaveDurationOption, AppNotification } from '../types';
 import { GeofenceMap } from './GeofenceMap';
+import { LocationPermissionPrompt } from './LocationPermissionPrompt';
 import confetti from 'canvas-confetti';
 import {
   Clock,
@@ -113,6 +114,9 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
     currentCoords,
     isUsingRealGPS,
     gpsError,
+    locationPermissionStatus,
+    hasAcquiredRealGPS,
+    requestLocationPermission,
     setManualLocation,
     enableRealGPS,
     markCheckIn,
@@ -557,7 +561,19 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
   }, [currentTime]);
 
   // Handle Punch In Action
-  const handlePunchIn = () => {
+  const handlePunchIn = async () => {
+    if (locationPermissionStatus !== 'granted' || !hasAcquiredRealGPS) {
+      const locRes = await requestLocationPermission();
+      if (!locRes.success) {
+        setPunchFeedback({
+          type: 'error',
+          punchType: 'check_in',
+          message: locRes.error || 'Check-in rejected! Please allow device location permission to verify your office geofence.',
+        });
+        return;
+      }
+    }
+
     if (!geofenceResult.isInAllowedGeofence || !geofenceResult.activeAuthorizedLocation) {
       setPunchFeedback({
         type: 'error',
@@ -960,6 +976,15 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
             {/* ========================================================== */}
             <div className="bg-white border border-[#ded4c5] rounded-2xl p-3.5 sm:p-4 space-y-3 shadow-2xs">
               
+              {/* Location Permission Prompt Card when location access is needed */}
+              {(locationPermissionStatus !== 'granted' || !hasAcquiredRealGPS) && (
+                <LocationPermissionPrompt
+                  variant="card"
+                  title="📍 Allow Device Location Access"
+                  description="SAATA Attendance needs live GPS access to confirm your presence at authorized office geofences for check-in."
+                />
+              )}
+
               {/* Live Geofence & GPS Radar Terminal Widget */}
               <div className="bg-[#fbf9f5] border border-[#ded4c5] rounded-2xl p-3 sm:p-3.5 space-y-2.5">
                 <div className="flex items-start justify-between gap-2">
