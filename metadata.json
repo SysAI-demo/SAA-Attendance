@@ -1,0 +1,6 @@
+{
+  "name": "SAATA",
+  "description": "SAATA - Enterprise-grade geofenced mobile attendance system scaled for 200+ concurrent employees with server-side database engine, real-time Server-Sent Events push updates, multi-office geofencing, hardware device binding, and role-based security.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
