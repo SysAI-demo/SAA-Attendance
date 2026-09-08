@@ -9,7 +9,7 @@ import { DefinitionsView } from './components/DefinitionsView';
 import { EmployeeLogin } from './components/EmployeeLogin';
 import { EmployeeMobileApp } from './components/EmployeeMobileApp';
 import { useDeviceType } from './hooks/useDeviceType';
-import { Clock, ShieldCheck, UserCheck, LogOut } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 
 const MainAppContent: React.FC = () => {
   const {
@@ -60,23 +60,9 @@ const MainAppContent: React.FC = () => {
               <span className="text-[11px] font-extrabold text-stone-700 uppercase tracking-wider bg-stone-100 px-2.5 py-1 rounded-lg border border-stone-200 shadow-2xs">
                 {portalTitle}
               </span>
-              <span className="text-stone-300">•</span>
-              <div className="text-xs text-stone-600 flex items-center gap-1.5">
-                <span className="font-mono text-[11px] font-bold bg-stone-100 text-stone-700 px-1.5 py-0.5 rounded border border-stone-200">
-                  {currentEmployee.employeeCode}
-                </span>
-                <span>Active User:</span>
-                <strong className="text-stone-900 font-bold">{currentEmployee.name}</strong>
-                <span className="text-stone-400 font-normal">({currentEmployee.designation})</span>
-              </div>
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 text-xs text-stone-500 bg-stone-100/80 px-2.5 py-1 rounded-lg border border-stone-200">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                <span className="font-medium">{currentEmployee.branch || 'Headquarters'}</span>
-              </div>
-
               <button
                 type="button"
                 id="header-desktop-logout-btn"

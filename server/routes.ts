@@ -108,7 +108,11 @@ apiRouter.post('/auth/login', rateLimiter(15, 60000), (req: Request, res: Respon
   const normalized = String(identifier).trim().toLowerCase();
   const employees = serverDb.getEmployees();
   const employee = employees.find(
-    (e) => e.email.toLowerCase() === normalized || e.employeeCode.toLowerCase() === normalized
+    (e) =>
+      (e.username && e.username.toLowerCase() === normalized) ||
+      e.email.toLowerCase() === normalized ||
+      e.employeeCode.toLowerCase() === normalized ||
+      (normalized === 'admin' && e.role === 'admin')
   );
 
   if (!employee) {

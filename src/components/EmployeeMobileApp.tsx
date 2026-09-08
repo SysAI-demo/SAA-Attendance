@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAttendance } from '../context/AttendanceContext';
 import { checkGeofenceStatus, formatDistance, calculateExpectedOutTime } from '../utils/geoUtils';
 import { getEmployeeAnnualQuota } from '../utils/leaveAnniversaryUtils';
 import { WorkHoursBarChart } from './WorkHoursBarChart';
 import { PunchFeedbackCard, PunchFeedbackState } from './PunchFeedbackCard';
-import { PermissionType, LeaveType, LeaveDurationOption } from '../types';
+import { PermissionType, LeaveType, LeaveDurationOption, AppNotification } from '../types';
+import confetti from 'canvas-confetti';
 import {
   Clock,
   MapPin,
@@ -61,7 +62,42 @@ import {
   Table,
   List,
   FileSpreadsheet,
+  Volume2,
 } from 'lucide-react';
+
+// Audio chime generator for instant real-time approval alerts
+function playNotificationChime() {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    const now = ctx.currentTime;
+
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(587.33, now); // D5
+    gain1.gain.setValueAtTime(0.08, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.25);
+
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(880, now + 0.12); // A5
+    gain2.gain.setValueAtTime(0.12, now + 0.12);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.12);
+    osc2.stop(now + 0.5);
+  } catch {
+    // Ignore browser audio autoplay restrictions
+  }
+}
 
 interface EmployeeMobileAppProps {
   onSwitchToAdminPortal?: () => void;
@@ -102,6 +138,56 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
   // Active Bottom Navigation Tab
   const [activeTab, setActiveTab] = useState<MobileAppTab>('home');
   const [showNotificationsModal, setShowNotificationsModal] = useState<boolean>(false);
+  const [notificationCategoryFilter, setNotificationCategoryFilter] = useState<'all' | 'approvals' | 'unread'>('all');
+
+  // Real-time In-App Notification Alert Banner & Toast State
+  const [liveAlertNotification, setLiveAlertNotification] = useState<AppNotification | null>(null);
+  const seenNotifIdsRef = useRef<Set<string>>(new Set());
+  const initialLoadDoneRef = useRef<boolean>(false);
+
+  // Monitor incoming real-time notifications for approval alerts & badges
+  useEffect(() => {
+    if (!initialLoadDoneRef.current) {
+      // First load: seed existing notifications so we don't trigger toast on startup
+      myNotifications.forEach((n) => seenNotifIdsRef.current.add(n.id));
+      initialLoadDoneRef.current = true;
+      return;
+    }
+
+    // Find any new unread notification for this employee
+    const newNotifications = myNotifications.filter(
+      (n) => !n.isRead && !seenNotifIdsRef.current.has(n.id)
+    );
+
+    if (newNotifications.length > 0) {
+      const latest = newNotifications[0];
+      // Mark all new notification IDs as tracked in ref
+      newNotifications.forEach((n) => seenNotifIdsRef.current.add(n.id));
+
+      // Trigger Floating Real-Time In-App Alert Banner
+      setLiveAlertNotification(latest);
+
+      // Play audio chime and trigger celebratory confetti if it is an HR / Manager approval
+      if (latest.type === 'leave_approved' || latest.type === 'permission_approved') {
+        playNotificationChime();
+        confetti({
+          particleCount: 55,
+          spread: 70,
+          origin: { y: 0.15 },
+          zIndex: 9999,
+        });
+      }
+    }
+  }, [myNotifications]);
+
+  // Auto-dismiss live alert toast after 8 seconds
+  useEffect(() => {
+    if (!liveAlertNotification) return;
+    const timer = setTimeout(() => {
+      setLiveAlertNotification(null);
+    }, 8000);
+    return () => clearTimeout(timer);
+  }, [liveAlertNotification]);
 
   // Biometric Auth Settings State
   const [biometricEnabled, setBiometricEnabled] = useState<boolean>(() => {
@@ -392,6 +478,32 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
     return myLeaves.filter((r) => r.status === 'pending' || r.status === 'pending_hr').length;
   }, [myLeaves]);
 
+  // HR & Manager Approval Notifications for Home Dashboard highlights and filtered modal views
+  const recentApprovalNotifications = useMemo(() => {
+    return myNotifications.filter(
+      (n) => n.type === 'leave_approved' || n.type === 'permission_approved'
+    );
+  }, [myNotifications]);
+
+  const latestUnreadApproval = useMemo(() => {
+    return (
+      myNotifications.find(
+        (n) => !n.isRead && (n.type === 'leave_approved' || n.type === 'permission_approved')
+      ) || recentApprovalNotifications[0]
+    );
+  }, [myNotifications, recentApprovalNotifications]);
+
+  // Filtered Notifications in the In-App Notification Center Modal
+  const filteredNotifications = useMemo(() => {
+    return myNotifications.filter((n) => {
+      if (notificationCategoryFilter === 'unread') return !n.isRead;
+      if (notificationCategoryFilter === 'approvals') {
+        return n.type === 'leave_approved' || n.type === 'permission_approved';
+      }
+      return true;
+    });
+  }, [myNotifications, notificationCategoryFilter]);
+
   // Greeting time
   const greeting = useMemo(() => {
     const hour = currentTime.getHours();
@@ -545,6 +657,68 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
   return (
     <div className="min-h-screen bg-[#efe8de] text-stone-900 pb-24 relative font-sans flex flex-col antialiased selection:bg-amber-200">
       {/* ========================================================================= */}
+      {/* REAL-TIME IN-APP NOTIFICATION FLOATING BANNER / ALERT TOAST */}
+      {/* ========================================================================= */}
+      {liveAlertNotification && (
+        <div className="fixed top-3 inset-x-3 z-50 max-w-md mx-auto animate-in slide-in-from-top-4 duration-300 pointer-events-auto">
+          <div className="bg-stone-950 border-2 border-emerald-500 text-stone-100 rounded-2xl p-3.5 shadow-2xl backdrop-blur-md flex items-start gap-3 relative overflow-hidden ring-4 ring-emerald-500/20">
+            {/* Pulsing indicator & icon */}
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/50 flex items-center justify-center text-emerald-400 shrink-0 mt-0.5">
+              <CheckCircle2 className="w-5 h-5 animate-pulse text-emerald-400" />
+            </div>
+
+            <div className="min-w-0 flex-1 space-y-1">
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[9px] font-black uppercase px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded-full border border-emerald-500/40 tracking-wider flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                  Real-Time HR Alert
+                </span>
+                <span className="text-[9px] text-stone-400 font-mono">Just now</span>
+              </div>
+              <h4 className="text-xs font-black text-white leading-tight">
+                {liveAlertNotification.title}
+              </h4>
+              <p className="text-[11px] text-stone-300 leading-snug line-clamp-2">
+                {liveAlertNotification.message}
+              </p>
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    markNotificationAsRead(liveAlertNotification.id);
+                    setLiveAlertNotification(null);
+                    setShowNotificationsModal(true);
+                  }}
+                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-black transition-all cursor-pointer shadow-xs active:scale-95 flex items-center gap-1"
+                >
+                  <Eye className="w-3 h-3" />
+                  <span>View Details</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    markNotificationAsRead(liveAlertNotification.id);
+                    setLiveAlertNotification(null);
+                  }}
+                  className="px-2.5 py-1 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded-lg text-[10px] font-bold transition-colors cursor-pointer active:scale-95"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setLiveAlertNotification(null)}
+              className="text-stone-400 hover:text-stone-200 p-1 rounded-md transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
       {/* MOBILE APP TOP BAR - Streamlined & Touch-Optimized */}
       {/* ========================================================================= */}
       <header className="sticky top-0 z-30 bg-stone-900/95 backdrop-blur-md border-b border-stone-800 text-stone-100 shadow-md px-3.5 py-2.5 flex items-center justify-between">
@@ -579,7 +753,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
           </div>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           {/* Admin Switcher if authorized */}
           {onSwitchToAdminPortal && (
             <button
@@ -594,17 +768,17 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
             </button>
           )}
 
-          {/* Notifications Bell */}
+          {/* Notifications Bell with Dynamic Pulse Badge */}
           <button
             type="button"
             id="mobile-notifications-btn"
             onClick={() => setShowNotificationsModal(true)}
-            title="Notifications"
-            className="relative p-2 bg-stone-800 hover:bg-stone-700 text-stone-200 rounded-xl transition-colors cursor-pointer active:scale-95"
+            title="Notifications & Alerts"
+            className="relative p-2 bg-stone-800 hover:bg-stone-700 text-stone-200 rounded-xl transition-all cursor-pointer active:scale-95 border border-stone-700"
           >
             <Bell className="w-4 h-4 text-stone-200" />
             {unreadNotificationCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-rose-500 text-white font-extrabold px-1.5 py-0.2 rounded-full text-[9px] ring-2 ring-stone-900 animate-pulse">
+              <span className="absolute -top-1.5 -right-1.5 bg-rose-500 text-white font-black px-1.5 py-0.2 rounded-full text-[9px] ring-2 ring-stone-900 shadow-md flex items-center justify-center animate-pulse min-w-[18px]">
                 {unreadNotificationCount}
               </span>
             )}
@@ -616,7 +790,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
             id="mobile-logout-btn"
             onClick={logout}
             title="Log Out"
-            className="p-2 bg-stone-800 hover:bg-rose-950/70 text-stone-400 hover:text-rose-300 rounded-xl transition-colors cursor-pointer active:scale-95"
+            className="p-2 bg-stone-800 hover:bg-rose-950/70 text-stone-400 hover:text-rose-300 rounded-xl transition-colors cursor-pointer active:scale-95 border border-stone-700"
           >
             <LogOut className="w-4 h-4" />
           </button>
@@ -632,6 +806,66 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
         {/* ======================================================================= */}
         {activeTab === 'home' && (
           <div className="space-y-3.5 animate-in fade-in duration-200">
+            {/* Real-Time HR Approval Alert Banner (High-Priority Mobile Highlight) */}
+            {latestUnreadApproval && (
+              <div className="bg-gradient-to-r from-emerald-950 via-stone-900 to-stone-900 border border-emerald-500/60 rounded-2xl p-3 shadow-md text-stone-100 space-y-2 relative overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-7 h-7 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center shrink-0">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-emerald-300 bg-emerald-950/90 px-1.5 py-0.5 rounded border border-emerald-700/60">
+                          {latestUnreadApproval.type === 'leave_approved' ? 'Leave Approved' : 'Permission Approved'}
+                        </span>
+                        {!latestUnreadApproval.isRead && (
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                        )}
+                      </div>
+                      <h3 className="text-xs font-extrabold text-white truncate pt-0.5">
+                        {latestUnreadApproval.title}
+                      </h3>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => markNotificationAsRead(latestUnreadApproval.id)}
+                    title="Mark as Read"
+                    className="p-1 text-stone-400 hover:text-stone-200 transition-colors cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <p className="text-[11px] text-stone-200 leading-snug">
+                  {latestUnreadApproval.message}
+                </p>
+
+                <div className="flex items-center justify-between pt-1.5 border-t border-emerald-900/60 text-[10px]">
+                  <span className="text-stone-400 font-mono">
+                    {new Date(latestUnreadApproval.timestamp || (latestUnreadApproval as any).createdAt || Date.now()).toLocaleDateString([], {
+                      month: 'short',
+                      day: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      markNotificationAsRead(latestUnreadApproval.id);
+                      setShowNotificationsModal(true);
+                    }}
+                    className="text-emerald-300 font-extrabold hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>View All Notifications</span>
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Greeting & Live Clock Banner */}
             <div className="bg-stone-900 border border-stone-800 text-stone-100 rounded-xl p-2.5 sm:p-3 shadow-xs relative overflow-hidden space-y-1.5">
               <div className="flex items-center justify-between gap-2 relative z-10">
@@ -2551,23 +2785,23 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
       </nav>
 
       {/* ============================================================ */}
-      {/* MOBILE NOTIFICATIONS MODAL */}
+      {/* MOBILE NOTIFICATIONS & REAL-TIME ALERTS MODAL */}
       {/* ============================================================ */}
       {showNotificationsModal && (
         <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-[#ded4c5] rounded-2xl max-w-sm w-full p-4 space-y-3 shadow-xl max-h-[85vh] flex flex-col animate-in fade-in zoom-in duration-150">
+          <div className="bg-white border border-[#ded4c5] rounded-3xl max-w-sm w-full p-4 space-y-3.5 shadow-2xl max-h-[88vh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-[#ded4c5] pb-2.5">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-stone-900 text-stone-50 flex items-center justify-center">
-                  <Bell className="w-4 h-4" />
+            <div className="flex items-center justify-between border-b border-[#ded4c5] pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-stone-900 text-stone-50 flex items-center justify-center shadow-xs">
+                  <Bell className="w-4 h-4 text-amber-300" />
                 </div>
                 <div>
-                  <h3 className="text-xs font-bold text-stone-900">
-                    Notifications
+                  <h3 className="text-xs font-black text-stone-900 tracking-tight">
+                    In-App Notification Center
                   </h3>
-                  <p className="text-[10px] text-stone-500">
-                    {unreadNotificationCount} unread update{unreadNotificationCount === 1 ? '' : 's'}
+                  <p className="text-[10px] text-stone-500 font-medium">
+                    {unreadNotificationCount} unread alert{unreadNotificationCount === 1 ? '' : 's'}
                   </p>
                 </div>
               </div>
@@ -2577,7 +2811,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                   <button
                     type="button"
                     onClick={markAllNotificationsAsRead}
-                    className="text-[10px] text-stone-600 hover:text-stone-900 font-semibold underline cursor-pointer"
+                    className="text-[10px] text-emerald-700 hover:text-emerald-900 font-extrabold underline cursor-pointer"
                   >
                     Mark all read
                   </button>
@@ -2592,41 +2826,131 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
               </div>
             </div>
 
+            {/* Category Filter Tabs */}
+            <div className="flex items-center gap-1.5 p-1 bg-[#ede4d6] rounded-xl text-[10px] font-bold">
+              <button
+                type="button"
+                onClick={() => setNotificationCategoryFilter('all')}
+                className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer ${
+                  notificationCategoryFilter === 'all'
+                    ? 'bg-white text-stone-900 shadow-2xs font-extrabold'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                All ({myNotifications.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setNotificationCategoryFilter('approvals')}
+                className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer flex items-center justify-center gap-1 ${
+                  notificationCategoryFilter === 'approvals'
+                    ? 'bg-emerald-600 text-white shadow-2xs font-extrabold'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>Approvals ({recentApprovalNotifications.length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setNotificationCategoryFilter('unread')}
+                className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer ${
+                  notificationCategoryFilter === 'unread'
+                    ? 'bg-amber-600 text-white shadow-2xs font-extrabold'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                Unread ({unreadNotificationCount})
+              </button>
+            </div>
+
             {/* Notification items list */}
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {myNotifications.length === 0 ? (
-                <div className="text-center py-8 text-stone-500 text-xs">
-                  <Bell className="w-7 h-7 mx-auto text-stone-400 mb-1.5 opacity-60" />
-                  <p className="font-semibold text-xs">No notifications yet</p>
-                  <p className="text-[10px] text-stone-400 mt-0.5">
-                    Leave approvals and workflow updates will appear here.
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+              {filteredNotifications.length === 0 ? (
+                <div className="text-center py-10 text-stone-500 text-xs space-y-2">
+                  <div className="w-10 h-10 mx-auto rounded-full bg-stone-100 flex items-center justify-center text-stone-400">
+                    <Bell className="w-5 h-5 opacity-60" />
+                  </div>
+                  <p className="font-bold text-xs text-stone-700">No notifications found</p>
+                  <p className="text-[10px] text-stone-400 max-w-[200px] mx-auto leading-relaxed">
+                    {notificationCategoryFilter === 'approvals'
+                      ? 'No HR or Manager approval alerts yet.'
+                      : notificationCategoryFilter === 'unread'
+                      ? 'You have caught up with all notifications.'
+                      : 'Workflow approvals and announcements will show here.'}
                   </p>
                 </div>
               ) : (
-                myNotifications.map((notif) => (
-                  <div
-                    key={notif.id}
-                    onClick={() => markNotificationAsRead(notif.id)}
-                    className={`p-2.5 rounded-xl border transition-all cursor-pointer text-xs space-y-1 ${
-                      notif.isRead
-                        ? 'bg-[#fbf9f5] border-[#ded4c5] text-stone-700'
-                        : 'bg-amber-50/70 border-amber-300 text-amber-950 font-medium'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <span className="font-bold text-stone-900 flex items-center gap-1 text-[11px]">
-                        {!notif.isRead && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />}
-                        {notif.title}
-                      </span>
-                      <span className="text-[9px] text-stone-400 font-mono">
-                        {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                filteredNotifications.map((notif) => {
+                  const isApproval = notif.type === 'leave_approved' || notif.type === 'permission_approved';
+                  const isRejected = notif.type === 'leave_rejected' || notif.type === 'permission_rejected';
+                  const isForwarded = notif.type === 'leave_forwarded_hr';
+
+                  return (
+                    <div
+                      key={notif.id}
+                      onClick={() => markNotificationAsRead(notif.id)}
+                      className={`p-3 rounded-2xl border transition-all cursor-pointer text-xs space-y-1.5 relative ${
+                        isApproval
+                          ? notif.isRead
+                            ? 'bg-emerald-50/40 border-emerald-200/80 text-stone-800'
+                            : 'bg-emerald-50 border-emerald-400 text-emerald-950 font-medium ring-1 ring-emerald-300'
+                          : isRejected
+                          ? notif.isRead
+                            ? 'bg-rose-50/40 border-rose-200/80 text-stone-800'
+                            : 'bg-rose-50 border-rose-300 text-rose-950 font-medium'
+                          : isForwarded
+                          ? notif.isRead
+                            ? 'bg-amber-50/40 border-amber-200/80 text-stone-800'
+                            : 'bg-amber-50 border-amber-300 text-amber-950 font-medium ring-1 ring-amber-300'
+                          : notif.isRead
+                          ? 'bg-[#fbf9f5] border-[#ded4c5] text-stone-700'
+                          : 'bg-amber-50/70 border-amber-300 text-amber-950 font-medium'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-1.5">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {isApproval ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          ) : isRejected ? (
+                            <XCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                          ) : isForwarded ? (
+                            <ArrowRight className="w-4 h-4 text-amber-600 shrink-0" />
+                          ) : (
+                            <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                          )}
+                          <span className="font-bold text-stone-900 text-[11px] truncate">
+                            {notif.title}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {!notif.isRead && (
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                          )}
+                          <span className="text-[9px] text-stone-400 font-mono">
+                            {new Date(notif.timestamp || (notif as any).createdAt || Date.now()).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className="text-stone-600 text-[11px] leading-relaxed pl-5.5">
+                        {notif.message}
+                      </p>
+
+                      <div className="flex items-center justify-between pt-1 border-t border-black/5 text-[9px] text-stone-400 pl-5.5">
+                        <span className="capitalize">
+                          {isApproval ? 'Status: Approved' : isRejected ? 'Status: Rejected' : 'Notification'}
+                        </span>
+                        <span className="text-emerald-700 font-bold">
+                          {notif.isRead ? 'Read' : 'Tap to mark read'}
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-stone-600 text-[10px] leading-relaxed">
-                      {notif.message}
-                    </p>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -2634,9 +2958,9 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
               <button
                 type="button"
                 onClick={() => setShowNotificationsModal(false)}
-                className="w-full py-2 bg-stone-900 hover:bg-stone-800 text-stone-50 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                className="w-full py-2.5 bg-stone-900 hover:bg-stone-800 text-stone-50 rounded-xl text-xs font-bold transition-colors cursor-pointer active:scale-98"
               >
-                Close
+                Close Notification Center
               </button>
             </div>
           </div>

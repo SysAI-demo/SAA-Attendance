@@ -1126,3 +1126,45 @@ export const INITIAL_ACTIVITY_LOGS: UserActivityLog[] = [
     },
   },
 ];
+
+export const DEFAULT_HR_ADMIN_USER: Employee = {
+  id: 'emp_admin_danish',
+  name: 'Danish Khan',
+  email: 'Danish199506@gmail.com',
+  username: 'admin',
+  password: 'password123',
+  isActive: true,
+  canLogin: true,
+  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+  employeeCode: 'EMP-001',
+  role: 'admin',
+  department: 'Human Resources',
+  designation: 'HR Director & System Admin',
+  gradeId: 'gr_m1',
+  phone: '+966 50 123 4567',
+  joinedDate: '2024-01-01',
+  allowedLocationIds: ['loc_hq'],
+  todayStatus: 'present',
+  leaveBalance: {
+    casual: 12,
+    sick: 10,
+    annual: 21,
+    permissionsCountThisMonth: 0,
+  },
+};
+
+export const DEFAULT_HQ_LOCATION: OfficeLocation = {
+  id: 'loc_hq',
+  name: 'SAATA Global Headquarters',
+  code: 'HQ-NORTH',
+  address: 'King Fahd Road, Business Tower, Suite 1200',
+  city: 'Riyadh',
+  latitude: 24.7136,
+  longitude: 46.6753,
+  radiusMeters: 300,
+  timezone: 'AST (UTC+3)',
+  color: '#3b82f6',
+  description: 'Main corporate headquarters and human resources administration center.',
+  isActive: true,
+};
+

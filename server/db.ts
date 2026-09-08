@@ -26,6 +26,8 @@ import {
   INITIAL_PERMISSION_REQUESTS,
   INITIAL_NOTIFICATIONS,
   INITIAL_ACTIVITY_LOGS,
+  DEFAULT_HR_ADMIN_USER,
+  DEFAULT_HQ_LOCATION,
 } from '../src/data/seedData';
 import {
   INITIAL_LEAVE_DEFINITIONS,
@@ -94,13 +96,13 @@ class ServerDatabase {
       console.warn('[ServerDB] Error reading existing database file:', err);
     }
 
-    // Default clean empty database for user manual data entry
-    console.log('[ServerDB] Initializing clean empty database for user data entry...');
+    // Default clean database with HR Admin and HQ location for manual user provisioning
+    console.log('[ServerDB] Initializing baseline clean database with HR Admin account...');
     const initialDb: DatabaseSchema = {
       version: 2,
       lastUpdated: new Date().toISOString(),
-      employees: [],
-      locations: [],
+      employees: [DEFAULT_HR_ADMIN_USER],
+      locations: [DEFAULT_HQ_LOCATION],
       attendance: [],
       leaves: [],
       permissions: [],
@@ -399,10 +401,10 @@ class ServerDatabase {
     this.broadcast('device_bound', { employeeId, device });
   }
 
-  // Complete clean system wipe
+  // Complete clean system wipe (retains primary HR admin for immediate login & user creation)
   public wipeAllData() {
-    this.data.employees = [];
-    this.data.locations = [];
+    this.data.employees = [DEFAULT_HR_ADMIN_USER];
+    this.data.locations = [DEFAULT_HQ_LOCATION];
     this.data.attendance = [];
     this.data.leaves = [];
     this.data.permissions = [];
@@ -411,7 +413,7 @@ class ServerDatabase {
     this.data.deviceBindings = {};
     this.saveToDiskSync(this.data);
     this.broadcast('db_wiped', { timestamp: new Date().toISOString() });
-    console.log('[ServerDB] Wiped all operational and employee data from server database.');
+    console.log('[ServerDB] Reset operational records. Baselines HR Administrator ready for manual employee provisioning.');
   }
 }
 

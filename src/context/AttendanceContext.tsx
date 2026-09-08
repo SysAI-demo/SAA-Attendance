@@ -34,6 +34,8 @@ import {
   INITIAL_PERMISSION_REQUESTS,
   INITIAL_NOTIFICATIONS,
   INITIAL_ACTIVITY_LOGS,
+  DEFAULT_HR_ADMIN_USER,
+  DEFAULT_HQ_LOCATION,
 } from '../data/seedData';
 import {
   INITIAL_LEAVE_DEFINITIONS,
@@ -267,18 +269,20 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
-  // 1. Initial Clean State: Starts fresh without pre-filled sample employees
+  // 1. Initial State: Always starts with HR Admin account ready for user provisioning
   const [employees, setEmployees] = useState<Employee[]>(() => {
-    return safeParseArray<Employee>(STORAGE_KEYS.EMPLOYEES, []);
+    const loaded = safeParseArray<Employee>(STORAGE_KEYS.EMPLOYEES, []);
+    return loaded.length > 0 ? loaded : [DEFAULT_HR_ADMIN_USER];
   });
 
   const [currentEmployeeId, setCurrentEmployeeIdState] = useState<string>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
-    return saved || '';
+    return saved || DEFAULT_HR_ADMIN_USER.id;
   });
 
   const [officeLocations, setOfficeLocations] = useState<OfficeLocation[]>(() => {
-    return safeParseArray<OfficeLocation>(STORAGE_KEYS.OFFICE_LOCATIONS, []);
+    const loaded = safeParseArray<OfficeLocation>(STORAGE_KEYS.OFFICE_LOCATIONS, []);
+    return loaded.length > 0 ? loaded : [DEFAULT_HQ_LOCATION];
   });
 
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => {
@@ -649,16 +653,19 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const wipeAllSystemData = useCallback(async () => {
     try {
       await fetch('/api/wipe-database', { method: 'POST' }).catch(console.error);
-      setEmployees([]);
-      setOfficeLocations([]);
+      setEmployees([DEFAULT_HR_ADMIN_USER]);
+      setOfficeLocations([DEFAULT_HQ_LOCATION]);
       setAttendanceRecords([]);
       setLeaveRequests([]);
       setPermissionRequests([]);
       setNotifications([]);
       setActivityLogs([]);
-      setCurrentEmployeeIdState('');
+      setCurrentEmployeeIdState(DEFAULT_HR_ADMIN_USER.id);
       setIsAuthenticated(false);
       Object.values(STORAGE_KEYS).forEach((k) => localStorage.removeItem(k));
+      localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify([DEFAULT_HR_ADMIN_USER]));
+      localStorage.setItem(STORAGE_KEYS.OFFICE_LOCATIONS, JSON.stringify([DEFAULT_HQ_LOCATION]));
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, DEFAULT_HR_ADMIN_USER.id);
     } catch (err) {
       console.error('Error wiping system data:', err);
     }
