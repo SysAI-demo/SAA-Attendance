@@ -85,27 +85,27 @@ class ServerDatabase {
       if (fs.existsSync(this.dbFilePath)) {
         const raw = fs.readFileSync(this.dbFilePath, 'utf-8');
         const parsed = JSON.parse(raw);
-        if (parsed && Array.isArray(parsed.employees) && parsed.employees.length > 0) {
-          console.log(`[ServerDB] Successfully loaded persistent database with ${parsed.employees.length} employees and ${parsed.attendance.length} records.`);
+        if (parsed && Array.isArray(parsed.employees)) {
+          console.log(`[ServerDB] Successfully loaded database with ${parsed.employees.length} employees and ${parsed.attendance?.length || 0} records.`);
           return parsed;
         }
       }
     } catch (err) {
-      console.warn('[ServerDB] Error reading existing database file, re-initializing from seeds:', err);
+      console.warn('[ServerDB] Error reading existing database file:', err);
     }
 
-    // Default Seed Data Initialization
-    console.log('[ServerDB] Initializing new enterprise database with comprehensive initial seeds...');
+    // Default clean empty database for user manual data entry
+    console.log('[ServerDB] Initializing clean empty database for user data entry...');
     const initialDb: DatabaseSchema = {
       version: 2,
       lastUpdated: new Date().toISOString(),
-      employees: INITIAL_EMPLOYEES,
-      locations: INITIAL_OFFICE_LOCATIONS,
-      attendance: INITIAL_ATTENDANCE,
-      leaves: INITIAL_LEAVE_REQUESTS,
-      permissions: INITIAL_PERMISSION_REQUESTS,
-      notifications: INITIAL_NOTIFICATIONS,
-      activityLogs: INITIAL_ACTIVITY_LOGS,
+      employees: [],
+      locations: [],
+      attendance: [],
+      leaves: [],
+      permissions: [],
+      notifications: [],
+      activityLogs: [],
       definitions: {
         leaves: INITIAL_LEAVE_DEFINITIONS,
         permissions: INITIAL_PERMISSION_DEFINITIONS,
@@ -116,13 +116,6 @@ class ServerDatabase {
       },
       deviceBindings: {},
     };
-
-    // Populate initial device bindings from employees
-    initialDb.employees.forEach((emp) => {
-      if (emp.deviceBinding) {
-        initialDb.deviceBindings[emp.id] = emp.deviceBinding;
-      }
-    });
 
     this.saveToDiskSync(initialDb);
     return initialDb;
@@ -404,6 +397,21 @@ class ServerDatabase {
       emp.deviceId = device.deviceId;
     }
     this.broadcast('device_bound', { employeeId, device });
+  }
+
+  // Complete clean system wipe
+  public wipeAllData() {
+    this.data.employees = [];
+    this.data.locations = [];
+    this.data.attendance = [];
+    this.data.leaves = [];
+    this.data.permissions = [];
+    this.data.notifications = [];
+    this.data.activityLogs = [];
+    this.data.deviceBindings = {};
+    this.saveToDiskSync(this.data);
+    this.broadcast('db_wiped', { timestamp: new Date().toISOString() });
+    console.log('[ServerDB] Wiped all operational and employee data from server database.');
   }
 }
 

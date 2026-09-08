@@ -67,7 +67,6 @@ export const EmployeeDirectory: React.FC = () => {
     employees,
     officeLocations,
     updateEmployeeLocations,
-    setCurrentEmployeeId,
     currentEmployee,
     isCurrentHR,
     addEmployee,
@@ -321,7 +320,7 @@ export const EmployeeDirectory: React.FC = () => {
       gradeId: formData.gradeId,
       phone: formData.phone,
       joinedDate: formData.joinedDate,
-      allowedLocationIds: formData.allowedLocationIds.length > 0 ? formData.allowedLocationIds : ['loc_hq'],
+      allowedLocationIds: (formData.allowedLocationIds || []).length > 0 ? formData.allowedLocationIds : ['loc_hq'],
       managerId: formData.managerId,
       todayStatus: 'absent',
       leaveBalance: {
@@ -457,19 +456,6 @@ export const EmployeeDirectory: React.FC = () => {
               </p>
             </div>
           </div>
-
-          <button
-            type="button"
-            id="switch-to-hr-demo-btn"
-            onClick={() => {
-              const hrUser = employees.find((e) => e.role === 'hr' || e.department.toLowerCase().includes('hr'));
-              if (hrUser) setCurrentEmployeeId(hrUser.id);
-            }}
-            className="text-xs bg-stone-900 hover:bg-stone-800 text-stone-50 font-semibold px-3 py-2 rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 self-start sm:self-auto"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            <span>Switch to HR Profile (Priya Sharma)</span>
-          </button>
         </div>
 
         {/* 2-Column Grid: My Information & My Reporting Manager */}
@@ -1134,16 +1120,6 @@ export const EmployeeDirectory: React.FC = () => {
                     )}
                   </div>
 
-                  {!isCurrentUser && isEmpActive && (
-                    <button
-                      type="button"
-                      onClick={() => setCurrentEmployeeId(emp.id)}
-                      className="text-xs bg-stone-900 hover:bg-stone-800 text-stone-50 px-2.5 py-1 rounded-lg transition-colors cursor-pointer font-medium flex items-center gap-1"
-                    >
-                      <span>Test As</span>
-                      <ArrowRight className="w-3 h-3" />
-                    </button>
-                  )}
                   {!isCurrentUser && !isEmpActive && (
                     <span className="text-[10px] text-rose-600 font-bold bg-rose-50 border border-rose-200 px-2 py-0.5 rounded">
                       Locked
@@ -1156,6 +1132,33 @@ export const EmployeeDirectory: React.FC = () => {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Empty State Banner */}
+      {filteredEmployees.length === 0 && (
+        <div className="bg-[#f8f5ef] border border-dashed border-[#ded4c5] rounded-3xl p-12 text-center flex flex-col items-center justify-center space-y-4 shadow-xs">
+          <div className="w-16 h-16 rounded-2xl bg-white border border-[#ded4c5] flex items-center justify-center text-stone-400 shadow-2xs">
+            <Users className="w-8 h-8 text-stone-500" />
+          </div>
+          <div className="space-y-1 max-w-md">
+            <h3 className="text-base font-extrabold text-stone-900">No Employees Found</h3>
+            <p className="text-xs text-stone-500 font-medium">
+              {searchQuery.trim()
+                ? 'No staff members match your search criteria. Try a different search keyword.'
+                : 'Your employee directory is clean and ready. Click "Add Employee" above to register your team members manually.'}
+            </p>
+          </div>
+          {!searchQuery.trim() && (
+            <button
+              type="button"
+              onClick={() => setIsAddModalOpen(true)}
+              className="px-4 py-2.5 bg-stone-900 hover:bg-stone-800 text-stone-50 rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer active:scale-98"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Register First Employee</span>
+            </button>
+          )}
         </div>
       )}
 

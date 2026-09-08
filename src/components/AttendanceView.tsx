@@ -1170,8 +1170,8 @@ export const AttendanceView: React.FC = () => {
                 onChange={(e) => setSelectedEmployeeId(e.target.value)}
                 className="w-full px-3 py-2 bg-[#fbf9f5] border border-[#ded4c5] rounded-xl text-xs text-stone-800 font-medium focus:outline-none focus:ring-1 focus:ring-stone-800 cursor-pointer"
               >
-                <option value="all">All Employees ({employees.length})</option>
-                {employees.map((emp) => (
+                <option value="all">All Employees ({(employees || []).length})</option>
+                {(employees || []).map((emp) => (
                   <option key={emp.id} value={emp.id}>
                     {emp.name} ({emp.employeeCode})
                   </option>

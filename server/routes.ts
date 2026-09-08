@@ -490,3 +490,8 @@ apiRouter.post('/activity-logs', (req: Request, res: Response) => {
   const added = serverDb.addActivityLog(cleanLog);
   res.json({ success: true, log: added });
 });
+
+apiRouter.post('/wipe-database', (req: Request, res: Response) => {
+  serverDb.wipeAllData();
+  res.json({ success: true, message: 'All operational and employee data wiped successfully.' });
+});

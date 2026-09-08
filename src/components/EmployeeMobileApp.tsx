@@ -219,10 +219,11 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
   // Filter leave types allowed by the employee's grade
   const allowedLeaveDefs = useMemo(() => {
     if (!leaveDefinitions) return [];
-    if (!employeeGrade || !employeeGrade.allowedLeaveTypeCodes || employeeGrade.allowedLeaveTypeCodes.length === 0) {
+    const codes = employeeGrade?.allowedLeaveCodes || (employeeGrade as any)?.allowedLeaveTypeCodes;
+    if (!employeeGrade || !codes || codes.length === 0) {
       return leaveDefinitions;
     }
-    return leaveDefinitions.filter((def) => employeeGrade.allowedLeaveTypeCodes.includes(def.code));
+    return leaveDefinitions.filter((def) => codes.includes(def.code));
   }, [leaveDefinitions, employeeGrade]);
 
   // Filter my requests

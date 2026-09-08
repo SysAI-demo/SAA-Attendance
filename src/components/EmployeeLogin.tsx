@@ -19,22 +19,44 @@ import {
   X,
 } from 'lucide-react';
 import { EmployeeDeviceBinding } from '../types';
+import { useDeviceType } from '../hooks/useDeviceType';
 
 interface EmployeeLoginProps {
   onLoginSuccess?: () => void;
+  isMobileScreen?: boolean;
 }
 
-export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({ onLoginSuccess }) => {
-  const { login, currentDevice } = useAttendance();
+export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
+  onLoginSuccess,
+  isMobileScreen: propIsMobile,
+}) => {
+  const detectedDevice = useDeviceType();
+  const isMobile = propIsMobile !== undefined ? propIsMobile : detectedDevice.isMobile;
+  const selectedPlatform: 'mobile' | 'desktop' = isMobile ? 'mobile' : 'desktop';
+
+  const {
+    login,
+    employees,
+    addEmployee,
+    currentDevice,
+  } = useAttendance();
+
+  const isDatabaseEmpty = (employees || []).length === 0;
+
+  // Login form state
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  
-  // Platform mode: defaults to auto-detected device type ('mobile' or 'desktop')
-  const [selectedPlatform, setSelectedPlatform] = useState<'mobile' | 'desktop'>(
-    (currentDevice as any).isMobile ? 'mobile' : 'desktop'
-  );
+
+  // Initial Admin Setup form state (when database is completely wiped/empty)
+  const [adminName, setAdminName] = useState('Danish Khan');
+  const [adminUsername, setAdminUsername] = useState('danish');
+  const [adminEmail, setAdminEmail] = useState('Danish199506@gmail.com');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminCode, setAdminCode] = useState('EMP-001');
+  const [adminBranch, setAdminBranch] = useState('Headquarters');
+  const [setupLoading, setSetupLoading] = useState(false);
 
   const [deviceMismatchInfo, setDeviceMismatchInfo] = useState<{
     registered?: EmployeeDeviceBinding | null;
@@ -63,8 +85,15 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({ onLoginSuccess }) 
     setBiometricStatusMsg(type === 'fingerprint' ? 'Scanning fingerprint sensor...' : 'Authenticating Face ID geometry...');
 
     setTimeout(() => {
-      const savedUser = localStorage.getItem('saata_biometric_user') || username.trim() || 'danish';
-      const savedPass = localStorage.getItem('saata_biometric_pass') || password.trim() || 'password123';
+      const savedUser = localStorage.getItem('saata_biometric_user') || username.trim() || employees[0]?.username;
+      const savedPass = localStorage.getItem('saata_biometric_pass') || password.trim() || employees[0]?.password || 'password123';
+
+      if (!savedUser) {
+        setBiometricScanning(false);
+        setShowBiometricModal(false);
+        setError('No saved biometric user found. Please login with password first.');
+        return;
+      }
 
       const res = login(savedUser, savedPass, { forcePlatform: 'mobile' });
 
@@ -119,11 +148,49 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({ onLoginSuccess }) 
     }, 280);
   };
 
-  const handleQuickFill = (user: string, pass: string) => {
-    setUsername(user);
-    setPassword(pass);
+  const handleAdminSetupSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminName.trim() || !adminUsername.trim() || !adminEmail.trim() || !adminPassword.trim()) {
+      setError('Please fill in all required fields.');
+      return;
+    }
+
+    setSetupLoading(true);
     setError(null);
-    setDeviceMismatchInfo(null);
+
+    try {
+      const createdAdmin = addEmployee({
+        name: adminName.trim(),
+        username: adminUsername.trim().toLowerCase(),
+        email: adminEmail.trim().toLowerCase(),
+        password: adminPassword,
+        employeeCode: adminCode.trim().toUpperCase() || 'EMP-001',
+        designation: 'Managing Director / Administrator',
+        department: 'Executive Management',
+        role: 'admin',
+        phone: '+966 50 000 0000',
+        isActive: true,
+        canLogin: true,
+        joinedDate: new Date().toISOString().split('T')[0],
+        todayStatus: 'present',
+        avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
+        leaveBalance: { casual: 12, sick: 10, annual: 15, permissionsCountThisMonth: 0 },
+        allowedLocationIds: [],
+      });
+
+      // Save for biometric convenience
+      localStorage.setItem('saata_biometric_user', createdAdmin.username);
+      localStorage.setItem('saata_biometric_pass', adminPassword);
+
+      setTimeout(() => {
+        login(createdAdmin.username, adminPassword, { forcePlatform: selectedPlatform });
+        setSetupLoading(false);
+        if (onLoginSuccess) onLoginSuccess();
+      }, 300);
+    } catch (err: any) {
+      setSetupLoading(false);
+      setError(err?.message || 'Error creating administrator account.');
+    }
   };
 
   return (
@@ -156,60 +223,33 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({ onLoginSuccess }) 
           </div>
         </div>
 
-        {/* Platform Mode Selector (Mobile App 1-Device vs Desktop Multi-Terminal) */}
-        <div className="w-full mb-4 bg-stone-200/70 p-1 rounded-2xl flex items-center border border-[#D9CEBA]">
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedPlatform('desktop');
-              setDeviceMismatchInfo(null);
-              setError(null);
-            }}
-            className={`flex-1 py-1.5 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              selectedPlatform === 'desktop'
-                ? 'bg-white text-stone-900 shadow-xs border border-stone-300'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
-          >
-            <Monitor className="w-3.5 h-3.5 text-stone-700" />
-            <span>Desktop Desk</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedPlatform('mobile');
-              setDeviceMismatchInfo(null);
-              setError(null);
-            }}
-            className={`flex-1 py-1.5 px-2 rounded-xl text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-              selectedPlatform === 'mobile'
-                ? 'bg-stone-900 text-stone-50 shadow-xs'
-                : 'text-stone-600 hover:text-stone-900'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5 text-amber-400" />
-            <span>Mobile App</span>
-          </button>
-        </div>
-
-        {/* Policy Indicator Banner */}
-        <div className="w-full mb-4 px-3 py-2 bg-white/70 border border-[#D9CEBA] rounded-xl flex items-center gap-2 text-[10.5px]">
+        {/* Platform Indicator Banner */}
+        <div className="w-full mb-4 px-3.5 py-2.5 bg-white/80 border border-[#D9CEBA] rounded-2xl flex items-center justify-between shadow-2xs">
           {selectedPlatform === 'desktop' ? (
-            <>
-              <Laptop className="w-4 h-4 text-stone-600 shrink-0" />
-              <div className="text-stone-700 leading-tight">
-                <strong className="text-stone-900">Desktop Workstation Mode:</strong> Open access from any computer or browser (no device lock).
+            <div className="flex items-center gap-2 text-xs">
+              <div className="w-7 h-7 rounded-xl bg-stone-900 text-stone-50 flex items-center justify-center shrink-0">
+                <Laptop className="w-3.5 h-3.5 text-stone-200" />
               </div>
-            </>
+              <div className="text-stone-700 leading-tight">
+                <div className="font-extrabold text-stone-900">Desktop Portal</div>
+                <div className="text-[10px] text-stone-500">Full workstation desk access</div>
+              </div>
+            </div>
           ) : (
-            <>
-              <Smartphone className="w-4 h-4 text-emerald-600 shrink-0" />
-              <div className="text-stone-700 leading-tight">
-                <strong className="text-stone-900">Mobile App Mode:</strong> 1-Device Hardware Binding active (1 phone per employee).
+            <div className="flex items-center gap-2 text-xs">
+              <div className="w-7 h-7 rounded-xl bg-stone-900 text-amber-400 flex items-center justify-center shrink-0">
+                <Smartphone className="w-3.5 h-3.5" />
               </div>
-            </>
+              <div className="text-stone-700 leading-tight">
+                <div className="font-extrabold text-stone-900">Mobile Application</div>
+                <div className="text-[10px] text-stone-500">1-Device hardware binding active</div>
+              </div>
+            </div>
           )}
+
+          <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider bg-stone-100 text-stone-600 border border-stone-200">
+            {selectedPlatform === 'desktop' ? 'Desktop' : 'Mobile'}
+          </span>
         </div>
 
         {/* 1-Device Mobile Policy Security Alert */}
@@ -262,110 +302,238 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({ onLoginSuccess }) 
           </div>
         )}
 
-        {/* Login Form */}
-        <form onSubmit={handleSubmit} className="w-full space-y-3.5">
-          
-          {/* USERNAME Field */}
-          <div className="space-y-1.5">
-            <label
-              htmlFor="login-username"
-              className="text-[11px] font-extrabold text-stone-700 uppercase tracking-wider block"
-            >
-              Username
-            </label>
-            <div className="relative w-full">
-              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A6E3B]">
-                <User className="w-4 h-4" />
+        {/* Form: Either Master Administrator Setup (if empty) or Standard Login */}
+        {isDatabaseEmpty ? (
+          <form onSubmit={handleAdminSetupSubmit} className="w-full space-y-3">
+            <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-2xl text-[11px] text-amber-900 leading-relaxed font-medium space-y-1">
+              <div className="font-extrabold flex items-center gap-1.5 text-amber-950">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span>System Clean State Ready</span>
               </div>
-              <input
-                id="login-username"
-                type="text"
-                required
-                value={username}
-                onChange={(e) => {
-                  setUsername(e.target.value);
-                  if (error) setError(null);
-                  if (deviceMismatchInfo) setDeviceMismatchInfo(null);
-                }}
-                placeholder="Enter username (e.g. danish)"
-                autoComplete="username"
-                className="w-full bg-white/95 border border-[#CDBE9F] focus:border-stone-900 focus:ring-1 focus:ring-stone-900 rounded-xl text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 font-medium pl-10 pr-3 py-2.5 focus:outline-hidden transition-all shadow-2xs"
-              />
+              <p>
+                All sample data has been completely erased. Create your primary Administrator account below to begin manual data entry.
+              </p>
             </div>
-          </div>
 
-          {/* PASSWORD Field */}
-          <div className="space-y-1.5">
-            <label
-              htmlFor="login-password"
-              className="text-[11px] font-extrabold text-stone-700 uppercase tracking-wider block"
-            >
-              Password
-            </label>
-            <div className="relative w-full">
-              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A6E3B]">
-                <Lock className="w-4 h-4" />
-              </div>
-              <input
-                id="login-password"
-                type={showPassword ? 'text' : 'password'}
-                required
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  if (error) setError(null);
-                  if (deviceMismatchInfo) setDeviceMismatchInfo(null);
-                }}
-                placeholder="••••••••"
-                autoComplete="current-password"
-                className="w-full bg-white/95 border border-[#CDBE9F] focus:border-stone-900 focus:ring-1 focus:ring-stone-900 rounded-xl text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 font-medium pl-10 pr-10 py-2.5 focus:outline-hidden transition-all shadow-2xs"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer p-1"
-                title={showPassword ? 'Hide password' : 'Show password'}
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-
-          {/* LOGIN SUBMIT Button */}
-          <div className="pt-2 space-y-2">
-            <button
-              type="submit"
-              id="login-submit-btn"
-              disabled={loading}
-              className="w-full bg-stone-900 hover:bg-stone-800 active:bg-stone-950 text-stone-50 py-3 rounded-xl text-xs sm:text-sm font-extrabold tracking-wider uppercase shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60 active:scale-98"
-            >
-              {loading ? (
-                <div className="flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-amber-300 border-t-transparent rounded-full animate-spin" />
-                  <span>Verifying Credentials...</span>
+            {/* FULL NAME */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-extrabold text-stone-700 uppercase tracking-wider block">
+                Administrator Full Name
+              </label>
+              <div className="relative w-full">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A6E3B]">
+                  <User className="w-3.5 h-3.5" />
                 </div>
-              ) : (
-                <>
-                  <span>Sign In ({selectedPlatform === 'desktop' ? 'Desktop Desk' : 'Mobile App'})</span>
-                  <ArrowRight className="w-4 h-4 text-amber-300" />
-                </>
-              )}
-            </button>
+                <input
+                  type="text"
+                  required
+                  value={adminName}
+                  onChange={(e) => setAdminName(e.target.value)}
+                  placeholder="e.g. Danish Khan"
+                  className="w-full bg-white/95 border border-[#CDBE9F] focus:border-stone-900 rounded-xl text-xs text-stone-900 font-medium pl-9 pr-3 py-2 focus:outline-hidden shadow-2xs"
+                />
+              </div>
+            </div>
 
-            {/* Mobile Biometric Login Shortcut */}
-            {selectedPlatform === 'mobile' && (
+            {/* USERNAME & EMPLOYEE CODE */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-[10px] font-extrabold text-stone-700 uppercase tracking-wider block">
+                  Username
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={adminUsername}
+                  onChange={(e) => setAdminUsername(e.target.value)}
+                  placeholder="e.g. danish"
+                  className="w-full bg-white/95 border border-[#CDBE9F] focus:border-stone-900 rounded-xl text-xs text-stone-900 font-medium px-3 py-2 focus:outline-hidden shadow-2xs"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-extrabold text-stone-700 uppercase tracking-wider block">
+                  Employee Code
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={adminCode}
+                  onChange={(e) => setAdminCode(e.target.value)}
+                  placeholder="EMP-001"
+                  className="w-full bg-white/95 border border-[#CDBE9F] focus:border-stone-900 rounded-xl text-xs text-stone-900 font-medium px-3 py-2 focus:outline-hidden shadow-2xs"
+                />
+              </div>
+            </div>
+
+            {/* EMAIL ADDRESS */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-extrabold text-stone-700 uppercase tracking-wider block">
+                Email Address
+              </label>
+              <input
+                type="email"
+                required
+                value={adminEmail}
+                onChange={(e) => setAdminEmail(e.target.value)}
+                placeholder="Danish199506@gmail.com"
+                className="w-full bg-white/95 border border-[#CDBE9F] focus:border-stone-900 rounded-xl text-xs text-stone-900 font-medium px-3 py-2 focus:outline-hidden shadow-2xs"
+              />
+            </div>
+
+            {/* PASSWORD */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-extrabold text-stone-700 uppercase tracking-wider block">
+                Master Password
+              </label>
+              <div className="relative w-full">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8A6E3B]">
+                  <Lock className="w-3.5 h-3.5" />
+                </div>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={adminPassword}
+                  onChange={(e) => setAdminPassword(e.target.value)}
+                  placeholder="Enter a secure password"
+                  className="w-full bg-white/95 border border-[#CDBE9F] focus:border-stone-900 rounded-xl text-xs text-stone-900 font-medium pl-9 pr-8 py-2 focus:outline-hidden shadow-2xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 p-0.5 cursor-pointer"
+                >
+                  {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            {/* SUBMIT BUTTON */}
+            <div className="pt-2">
               <button
-                type="button"
-                id="login-biometric-btn"
-                onClick={handleBiometricLoginTrigger}
-                className="w-full bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-stone-950 py-2.5 rounded-xl text-xs font-black tracking-wide shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98 border border-amber-400"
+                type="submit"
+                disabled={setupLoading}
+                className="w-full bg-stone-900 hover:bg-stone-800 active:bg-stone-950 text-stone-50 py-2.5 rounded-xl text-xs font-extrabold tracking-wider uppercase shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60 active:scale-98"
               >
-                <Fingerprint className="w-4 h-4 text-stone-950" />
-                <span>Login with Fingerprint / Face ID</span>
+                {setupLoading ? (
+                  <div className="flex items-center gap-2">
+                    <span className="w-3.5 h-3.5 border-2 border-amber-300 border-t-transparent rounded-full animate-spin" />
+                    <span>Initializing Master Account...</span>
+                  </div>
+                ) : (
+                  <>
+                    <span>Create Administrator & Enter</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-amber-300" />
+                  </>
+                )}
               </button>
-            )}
-          </div>
-        </form>
+            </div>
+          </form>
+        ) : (
+          /* Standard Login Form */
+          <form onSubmit={handleSubmit} className="w-full space-y-3.5">
+            
+            {/* USERNAME Field */}
+            <div className="space-y-1.5">
+              <label
+                htmlFor="login-username"
+                className="text-[11px] font-extrabold text-stone-700 uppercase tracking-wider block"
+              >
+                Username
+              </label>
+              <div className="relative w-full">
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A6E3B]">
+                  <User className="w-4 h-4" />
+                </div>
+                <input
+                  id="login-username"
+                  type="text"
+                  required
+                  value={username}
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    if (error) setError(null);
+                    if (deviceMismatchInfo) setDeviceMismatchInfo(null);
+                  }}
+                  placeholder="Enter username"
+                  autoComplete="username"
+                  className="w-full bg-white/95 border border-[#CDBE9F] focus:border-stone-900 focus:ring-1 focus:ring-stone-900 rounded-xl text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 font-medium pl-10 pr-3 py-2.5 focus:outline-hidden transition-all shadow-2xs"
+                />
+              </div>
+            </div>
+
+            {/* PASSWORD Field */}
+            <div className="space-y-1.5">
+              <label
+                htmlFor="login-password"
+                className="text-[11px] font-extrabold text-stone-700 uppercase tracking-wider block"
+              >
+                Password
+              </label>
+              <div className="relative w-full">
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A6E3B]">
+                  <Lock className="w-4 h-4" />
+                </div>
+                <input
+                  id="login-password"
+                  type={showPassword ? 'text' : 'password'}
+                  required
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (error) setError(null);
+                    if (deviceMismatchInfo) setDeviceMismatchInfo(null);
+                  }}
+                  placeholder="••••••••"
+                  autoComplete="current-password"
+                  className="w-full bg-white/95 border border-[#CDBE9F] focus:border-stone-900 focus:ring-1 focus:ring-stone-900 rounded-xl text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 font-medium pl-10 pr-10 py-2.5 focus:outline-hidden transition-all shadow-2xs"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer p-1"
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* LOGIN SUBMIT Button */}
+            <div className="pt-2 space-y-2">
+              <button
+                type="submit"
+                id="login-submit-btn"
+                disabled={loading}
+                className="w-full bg-stone-900 hover:bg-stone-800 active:bg-stone-950 text-stone-50 py-3 rounded-xl text-xs sm:text-sm font-extrabold tracking-wider uppercase shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60 active:scale-98"
+              >
+                {loading ? (
+                  <div className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-amber-300 border-t-transparent rounded-full animate-spin" />
+                    <span>Verifying Credentials...</span>
+                  </div>
+                ) : (
+                  <>
+                    <span>{selectedPlatform === 'desktop' ? 'Sign In to Workspace' : 'Sign In to Mobile App'}</span>
+                    <ArrowRight className="w-4 h-4 text-amber-300" />
+                  </>
+                )}
+              </button>
+
+              {/* Mobile Biometric Login Shortcut */}
+              {selectedPlatform === 'mobile' && (
+                <button
+                  type="button"
+                  id="login-biometric-btn"
+                  onClick={handleBiometricLoginTrigger}
+                  className="w-full bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-stone-950 py-2.5 rounded-xl text-xs font-black tracking-wide shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98 border border-amber-400"
+                >
+                  <Fingerprint className="w-4 h-4 text-stone-950" />
+                  <span>Login with Fingerprint / Face ID</span>
+                </button>
+              )}
+            </div>
+          </form>
+        )}
 
         {/* Current Detected Hardware Tag */}
         <div className="w-full mt-3 px-3 py-2 bg-stone-100/80 border border-[#D9CEBA] rounded-xl flex items-center justify-between text-[10px] text-stone-600">
@@ -380,41 +548,6 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({ onLoginSuccess }) 
           <span className="font-mono text-[9px] bg-stone-200 text-stone-700 px-1.5 py-0.5 rounded font-bold shrink-0">
             {selectedPlatform === 'mobile' ? '1-Phone Policy' : 'Multi-Terminal'}
           </span>
-        </div>
-
-        {/* Quick Demo Sign In Shortcut */}
-        <div className="w-full mt-4 pt-3 border-t border-[#D9CEBA] flex flex-col items-center">
-          <span className="text-[10px] text-stone-500 font-extrabold tracking-wider uppercase mb-2">
-            Quick One-Click Demo Sign In:
-          </span>
-          <div className="flex flex-wrap items-center justify-center gap-1.5 w-full">
-            <button
-              type="button"
-              onClick={() => handleQuickFill('danish', 'password123')}
-              className="flex-1 min-w-[90px] py-1.5 px-2 bg-white/80 hover:bg-white text-stone-800 border border-[#CDBE9F] hover:border-stone-900 rounded-xl text-[11px] font-bold cursor-pointer transition-all text-center shadow-2xs hover:shadow-xs active:scale-95"
-            >
-              <div className="text-stone-900 font-extrabold">danish</div>
-              <div className="text-[9px] text-[#8A6E3B] font-semibold">Admin / HR</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickFill('sarah', 'password123')}
-              className="flex-1 min-w-[90px] py-1.5 px-2 bg-white/80 hover:bg-white text-stone-800 border border-[#CDBE9F] hover:border-stone-900 rounded-xl text-[11px] font-bold cursor-pointer transition-all text-center shadow-2xs hover:shadow-xs active:scale-95"
-            >
-              <div className="text-stone-900 font-extrabold">sarah</div>
-              <div className="text-[9px] text-[#8A6E3B] font-semibold">Manager</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => handleQuickFill('priya', 'password123')}
-              className="flex-1 min-w-[90px] py-1.5 px-2 bg-white/80 hover:bg-white text-stone-800 border border-[#CDBE9F] hover:border-stone-900 rounded-xl text-[11px] font-bold cursor-pointer transition-all text-center shadow-2xs hover:shadow-xs active:scale-95"
-            >
-              <div className="text-stone-900 font-extrabold">priya</div>
-              <div className="text-[9px] text-[#8A6E3B] font-semibold">Employee</div>
-            </button>
-          </div>
         </div>
 
       </div>

@@ -85,9 +85,7 @@ export const firestoreService = {
         snapshot.forEach((docSnap) => {
           list.push({ ...docSnap.data(), id: docSnap.id } as Employee);
         });
-        if (list.length > 0) {
-          callback(list);
-        }
+        callback(list);
       },
       (error) => {
         console.error('Error in subscribeEmployees snapshot:', error);
@@ -117,9 +115,7 @@ export const firestoreService = {
         snapshot.forEach((docSnap) => {
           list.push({ ...docSnap.data(), id: docSnap.id } as OfficeLocation);
         });
-        if (list.length > 0) {
-          callback(list);
-        }
+        callback(list);
       },
       (error) => {
         console.error('Error in subscribeLocations snapshot:', error);
@@ -466,6 +462,37 @@ export const firestoreService = {
       return true;
     } catch (err) {
       console.error('Database seeding error:', err);
+      return false;
+    }
+  },
+
+  async wipeAllFirestoreCollections(): Promise<boolean> {
+    try {
+      const collectionsToWipe = [
+        COLLECTIONS.EMPLOYEES,
+        COLLECTIONS.LOCATIONS,
+        COLLECTIONS.ATTENDANCE,
+        COLLECTIONS.LEAVES,
+        COLLECTIONS.PERMISSIONS,
+        COLLECTIONS.NOTIFICATIONS,
+        COLLECTIONS.ACTIVITY_LOGS,
+      ];
+
+      for (const colName of collectionsToWipe) {
+        const colRef = collection(db, colName);
+        const snapshot = await getDocs(colRef);
+        if (snapshot.size > 0) {
+          const batch = writeBatch(db);
+          for (const docSnap of snapshot.docs) {
+            batch.delete(docSnap.ref);
+          }
+          await batch.commit();
+        }
+      }
+      console.log('Successfully wiped all Firestore operational data.');
+      return true;
+    } catch (err) {
+      console.error('Error wiping Firestore data:', err);
       return false;
     }
   },

@@ -137,7 +137,7 @@ interface AttendanceContextType {
   
   // HR Employee Management & Anniversary Refill Engine
   isCurrentHR: boolean;
-  addEmployee: (employee: Omit<Employee, 'id'>) => void;
+  addEmployee: (employee: Omit<Employee, 'id'>) => Employee;
   updateEmployee: (employee: Employee) => void;
   deleteEmployee: (employeeId: string) => void;
   toggleEmployeeLoginAccess: (employeeId: string, canLogin?: boolean) => { success: boolean; message: string; isEnabled: boolean };
@@ -211,6 +211,8 @@ interface AttendanceContextType {
   isMobileDeviceView: boolean;
   setIsMobileDeviceView: (val: boolean) => void;
   isAuthenticated: boolean;
+  setIsAuthenticated: (val: boolean) => void;
+  wipeAllSystemData: () => Promise<void>;
   login: (
     identifier: string,
     password?: string,
@@ -236,105 +238,114 @@ interface AttendanceContextType {
 const AttendanceContext = createContext<AttendanceContextType | undefined>(undefined);
 
 const STORAGE_KEYS = {
-  EMPLOYEES: 'geofence_att_employees_v1',
-  CURRENT_USER_ID: 'geofence_att_current_user_v1',
-  OFFICE_LOCATIONS: 'geofence_att_locations_v1',
-  ATTENDANCE: 'geofence_att_records_v1',
-  LEAVES: 'geofence_att_leaves_v1',
-  PERMISSIONS: 'geofence_att_permissions_v1',
-  ACTIVITY_LOGS: 'geofence_att_act_logs_v1',
-  DEF_LEAVES: 'geofence_def_leaves_v1',
-  DEF_PERMS: 'geofence_def_perms_v1',
-  DEF_GRADES: 'geofence_def_grades_v1',
-  DEF_TA_POLICY: 'geofence_def_ta_policy_v1',
-  DEF_HOLIDAYS: 'geofence_def_holidays_v1',
-  DEF_SCHEDULE: 'geofence_def_schedule_v1',
-  NOTIFICATIONS: 'geofence_att_notifications_v1',
+  EMPLOYEES: 'saata_prod_clean_v4_employees',
+  CURRENT_USER_ID: 'saata_prod_clean_v4_current_user',
+  OFFICE_LOCATIONS: 'saata_prod_clean_v4_locations',
+  ATTENDANCE: 'saata_prod_clean_v4_records',
+  LEAVES: 'saata_prod_clean_v4_leaves',
+  PERMISSIONS: 'saata_prod_clean_v4_permissions',
+  ACTIVITY_LOGS: 'saata_prod_clean_v4_act_logs',
+  DEF_LEAVES: 'saata_prod_clean_v4_def_leaves',
+  DEF_PERMS: 'saata_prod_clean_v4_def_perms',
+  DEF_GRADES: 'saata_prod_clean_v4_def_grades',
+  DEF_TA_POLICY: 'saata_prod_clean_v4_def_ta_policy',
+  DEF_HOLIDAYS: 'saata_prod_clean_v4_def_holidays',
+  DEF_SCHEDULE: 'saata_prod_clean_v4_def_schedule',
+  NOTIFICATIONS: 'saata_prod_clean_v4_notifications',
 };
 
 export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // 1. Initial State from LocalStorage fallback
+  // Helper to safely parse array from local storage
+  const safeParseArray = <T,>(key: string, fallback: T[] = []): T[] => {
+    try {
+      const saved = localStorage.getItem(key);
+      if (!saved) return fallback;
+      const parsed = JSON.parse(saved);
+      return Array.isArray(parsed) ? parsed : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
+  // 1. Initial Clean State: Starts fresh without pre-filled sample employees
   const [employees, setEmployees] = useState<Employee[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.EMPLOYEES);
-    return saved ? JSON.parse(saved) : INITIAL_EMPLOYEES;
+    return safeParseArray<Employee>(STORAGE_KEYS.EMPLOYEES, []);
   });
 
   const [currentEmployeeId, setCurrentEmployeeIdState] = useState<string>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER_ID);
-    return saved || 'emp_01'; // Default: Danish Khan
+    return saved || '';
   });
 
   const [officeLocations, setOfficeLocations] = useState<OfficeLocation[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.OFFICE_LOCATIONS);
-    return saved ? JSON.parse(saved) : INITIAL_OFFICE_LOCATIONS;
+    return safeParseArray<OfficeLocation>(STORAGE_KEYS.OFFICE_LOCATIONS, []);
   });
 
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.ATTENDANCE);
-    return saved ? JSON.parse(saved) : INITIAL_ATTENDANCE;
+    return safeParseArray<AttendanceRecord>(STORAGE_KEYS.ATTENDANCE, []);
   });
 
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.LEAVES);
-    return saved ? JSON.parse(saved) : INITIAL_LEAVE_REQUESTS;
+    return safeParseArray<LeaveRequest>(STORAGE_KEYS.LEAVES, []);
   });
 
   const [permissionRequests, setPermissionRequests] = useState<PermissionRequest[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.PERMISSIONS);
-    return saved ? JSON.parse(saved) : INITIAL_PERMISSION_REQUESTS;
+    return safeParseArray<PermissionRequest>(STORAGE_KEYS.PERMISSIONS, []);
   });
 
   const [notifications, setNotifications] = useState<AppNotification[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
-    return saved ? JSON.parse(saved) : INITIAL_NOTIFICATIONS;
+    return safeParseArray<AppNotification>(STORAGE_KEYS.NOTIFICATIONS, []);
   });
 
   const [activityLogs, setActivityLogs] = useState<UserActivityLog[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.ACTIVITY_LOGS);
-    return saved ? JSON.parse(saved) : INITIAL_ACTIVITY_LOGS;
+    return safeParseArray<UserActivityLog>(STORAGE_KEYS.ACTIVITY_LOGS, []);
   });
 
   const [leaveDefinitions, setLeaveDefinitions] = useState<LeaveDefinition[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.DEF_LEAVES);
-    if (!saved) return INITIAL_LEAVE_DEFINITIONS;
-    try {
-      const parsed: LeaveDefinition[] = JSON.parse(saved);
-      return parsed.map((item) => ({
-        ...item,
-        minDurationDays: item.minDurationDays ?? (item.halfDayAllowed ? 0.5 : 1),
-        maxDurationDays: item.maxDurationDays ?? item.maxConsecutiveDays ?? 14,
-        allowAfterDays: item.allowAfterDays ?? 0,
-        approvalBy: item.approvalBy ?? 'manager_only',
-        attachmentMandatory: item.attachmentMandatory ?? (item.docRequiredAfterDays ? item.docRequiredAfterDays > 0 : false),
-      }));
-    } catch {
-      return INITIAL_LEAVE_DEFINITIONS;
-    }
+    const arr = safeParseArray<LeaveDefinition>(STORAGE_KEYS.DEF_LEAVES, INITIAL_LEAVE_DEFINITIONS);
+    return arr.map((item) => ({
+      ...item,
+      minDurationDays: item.minDurationDays ?? (item.halfDayAllowed ? 0.5 : 1),
+      maxDurationDays: item.maxDurationDays ?? item.maxConsecutiveDays ?? 14,
+      allowAfterDays: item.allowAfterDays ?? 0,
+      approvalBy: item.approvalBy ?? 'manager_only',
+      attachmentMandatory: item.attachmentMandatory ?? (item.docRequiredAfterDays ? item.docRequiredAfterDays > 0 : false),
+    }));
   });
 
   const [permissionDefinitions, setPermissionDefinitions] = useState<PermissionDefinition[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.DEF_PERMS);
-    return saved ? JSON.parse(saved) : INITIAL_PERMISSION_DEFINITIONS;
+    return safeParseArray<PermissionDefinition>(STORAGE_KEYS.DEF_PERMS, INITIAL_PERMISSION_DEFINITIONS);
   });
 
   const [gradeDefinitions, setGradeDefinitions] = useState<GradeDefinition[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.DEF_GRADES);
-    return saved ? JSON.parse(saved) : INITIAL_GRADE_DEFINITIONS;
+    return safeParseArray<GradeDefinition>(STORAGE_KEYS.DEF_GRADES, INITIAL_GRADE_DEFINITIONS);
   });
 
   const [taPolicy, setTAPolicy] = useState<TAPolicyDefinition>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.DEF_TA_POLICY);
-    return saved ? JSON.parse(saved) : INITIAL_TA_POLICY;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.DEF_TA_POLICY);
+      return saved ? JSON.parse(saved) : INITIAL_TA_POLICY;
+    } catch {
+      return INITIAL_TA_POLICY;
+    }
   });
 
   const [holidayDefinitions, setHolidayDefinitions] = useState<HolidayDefinition[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.DEF_HOLIDAYS);
-    return saved ? JSON.parse(saved) : INITIAL_HOLIDAY_DEFINITIONS;
+    return safeParseArray<HolidayDefinition>(STORAGE_KEYS.DEF_HOLIDAYS, INITIAL_HOLIDAY_DEFINITIONS);
   });
 
   const [workSchedule, setWorkSchedule] = useState<WorkScheduleDefinition>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.DEF_SCHEDULE);
-    return saved ? JSON.parse(saved) : INITIAL_WORK_SCHEDULE;
+    try {
+      const saved = localStorage.getItem(STORAGE_KEYS.DEF_SCHEDULE);
+      if (!saved) return INITIAL_WORK_SCHEDULE;
+      const parsed = JSON.parse(saved);
+      if (parsed && Array.isArray(parsed.shifts) && Array.isArray(parsed.workingDays)) {
+        return parsed;
+      }
+      return INITIAL_WORK_SCHEDULE;
+    } catch {
+      return INITIAL_WORK_SCHEDULE;
+    }
   });
 
   const [isDbConnected, setIsDbConnected] = useState<boolean>(true);
@@ -348,9 +359,11 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
 
   const [activeAppMode, setActiveAppModeState] = useState<'mobile_app' | 'admin_portal'>(() => {
-    const savedMode = localStorage.getItem('geofence_app_mode_v1');
-    if (savedMode === 'mobile_app' || savedMode === 'admin_portal') return savedMode;
-    return 'mobile_app';
+    if (typeof window !== 'undefined') {
+      const isMobileScreen = window.innerWidth < 768 || /Android|iPhone|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent);
+      return isMobileScreen ? 'mobile_app' : 'admin_portal';
+    }
+    return 'admin_portal';
   });
 
   const setActiveAppMode = (mode: 'mobile_app' | 'admin_portal') => {
@@ -430,31 +443,31 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         // Step 2: Fetch authoritative full database state from server
         const syncData = await serverApiService.fetchFullSync();
         if (syncData) {
-          if (syncData.employees && syncData.employees.length > 0) {
+          if (Array.isArray(syncData.employees)) {
             setEmployees(syncData.employees);
             localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(syncData.employees));
           }
-          if (syncData.locations && syncData.locations.length > 0) {
+          if (Array.isArray(syncData.locations)) {
             setOfficeLocations(syncData.locations);
             localStorage.setItem(STORAGE_KEYS.OFFICE_LOCATIONS, JSON.stringify(syncData.locations));
           }
-          if (syncData.attendance) {
+          if (Array.isArray(syncData.attendance)) {
             setAttendanceRecords(syncData.attendance);
             localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(syncData.attendance));
           }
-          if (syncData.leaves) {
+          if (Array.isArray(syncData.leaves)) {
             setLeaveRequests(syncData.leaves);
             localStorage.setItem(STORAGE_KEYS.LEAVES, JSON.stringify(syncData.leaves));
           }
-          if (syncData.permissions) {
+          if (Array.isArray(syncData.permissions)) {
             setPermissionRequests(syncData.permissions);
             localStorage.setItem(STORAGE_KEYS.PERMISSIONS, JSON.stringify(syncData.permissions));
           }
-          if (syncData.notifications) {
+          if (Array.isArray(syncData.notifications)) {
             setNotifications(syncData.notifications);
             localStorage.setItem(STORAGE_KEYS.NOTIFICATIONS, JSON.stringify(syncData.notifications));
           }
-          if (syncData.activityLogs && syncData.activityLogs.length > 0) {
+          if (Array.isArray(syncData.activityLogs)) {
             setActivityLogs(syncData.activityLogs);
             localStorage.setItem(STORAGE_KEYS.ACTIVITY_LOGS, JSON.stringify(syncData.activityLogs));
           }
@@ -564,6 +577,24 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               if (event.payload.holidays) setHolidayDefinitions(event.payload.holidays);
               if (event.payload.workSchedule) setWorkSchedule(event.payload.workSchedule);
               break;
+            case 'db_wiped':
+              setEmployees([]);
+              setOfficeLocations([]);
+              setAttendanceRecords([]);
+              setLeaveRequests([]);
+              setPermissionRequests([]);
+              setNotifications([]);
+              setActivityLogs([]);
+              setCurrentEmployeeIdState('');
+              setIsAuthenticated(false);
+              localStorage.removeItem(STORAGE_KEYS.EMPLOYEES);
+              localStorage.removeItem(STORAGE_KEYS.OFFICE_LOCATIONS);
+              localStorage.removeItem(STORAGE_KEYS.ATTENDANCE);
+              localStorage.removeItem(STORAGE_KEYS.LEAVES);
+              localStorage.removeItem(STORAGE_KEYS.PERMISSIONS);
+              localStorage.removeItem(STORAGE_KEYS.NOTIFICATIONS);
+              localStorage.removeItem(STORAGE_KEYS.ACTIVITY_LOGS);
+              break;
           }
         });
         unsubs.push(unsubSSE);
@@ -594,7 +625,44 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, currentEmployeeId);
   }, [currentEmployeeId]);
 
-  const currentEmployee = employees.find((e) => e.id === currentEmployeeId) || employees[0];
+  const DEFAULT_FALLBACK_USER: Employee = {
+    id: 'emp_admin',
+    name: 'Administrator',
+    username: 'admin',
+    email: 'admin@company.com',
+    employeeCode: 'EMP-001',
+    designation: 'System Administrator',
+    department: 'Management',
+    role: 'admin',
+    phone: '+966 50 000 0000',
+    isActive: true,
+    canLogin: true,
+    joinedDate: new Date().toISOString().split('T')[0],
+    todayStatus: 'present',
+    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80',
+    leaveBalance: { casual: 12, sick: 10, annual: 15, permissionsCountThisMonth: 0 },
+    allowedLocationIds: [],
+  };
+
+  const currentEmployee = employees.find((e) => e.id === currentEmployeeId) || employees[0] || DEFAULT_FALLBACK_USER;
+
+  const wipeAllSystemData = useCallback(async () => {
+    try {
+      await fetch('/api/wipe-database', { method: 'POST' }).catch(console.error);
+      setEmployees([]);
+      setOfficeLocations([]);
+      setAttendanceRecords([]);
+      setLeaveRequests([]);
+      setPermissionRequests([]);
+      setNotifications([]);
+      setActivityLogs([]);
+      setCurrentEmployeeIdState('');
+      setIsAuthenticated(false);
+      Object.values(STORAGE_KEYS).forEach((k) => localStorage.removeItem(k));
+    } catch (err) {
+      console.error('Error wiping system data:', err);
+    }
+  }, []);
 
   useEffect(() => {
     if (currentEmployee) {
@@ -888,7 +956,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       });
     }
 
-    if (matched.role === 'employee' || isMobileSession) {
+    if (isMobileSession) {
       setActiveAppMode('mobile_app');
     } else {
       setActiveAppMode('admin_portal');
@@ -1653,13 +1721,14 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const unreadNotificationCount = myNotifications.filter((n) => !n.isRead).length;
 
   // HR Employee Management with Firestore Persistence
-  const addEmployee = (empData: Omit<Employee, 'id'>) => {
+  const addEmployee = (empData: Omit<Employee, 'id'>): Employee => {
     const newEmp: Employee = {
       ...empData,
       id: `emp_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     };
     setEmployees((prev) => [newEmp, ...prev]);
     firestoreService.saveEmployee(newEmp).catch(console.error);
+    return newEmp;
   };
 
   const updateEmployee = (updatedEmp: Employee) => {
@@ -2324,6 +2393,8 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         isMobileDeviceView,
         setIsMobileDeviceView,
         isAuthenticated,
+        setIsAuthenticated,
+        wipeAllSystemData,
         login,
         logout,
         activeAppMode,

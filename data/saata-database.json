@@ -1,0 +1,51 @@
+{
+  "version": 2,
+  "lastUpdated": "2026-09-08T07:38:08.199Z",
+  "employees": [],
+  "locations": [],
+  "attendance": [],
+  "leaves": [],
+  "permissions": [],
+  "notifications": [],
+  "activityLogs": [],
+  "definitions": {
+    "leaves": [],
+    "permissions": [],
+    "grades": [],
+    "taPolicy": {
+      "lateGraceMinutes": 15,
+      "earlyCheckoutGraceMinutes": 15,
+      "overtimeGraceMinutes": 30,
+      "halfDayCutoffHours": 4,
+      "fullDayCutoffHours": 8,
+      "weeklyHolidayDays": [
+        0
+      ],
+      "biometricMandatory": false,
+      "faceRecognitionMandatory": false,
+      "allowRemotePunch": false,
+      "lockDeviceToOneEmployee": true,
+      "requireLeaveApproval": true,
+      "requirePermissionSlip": true,
+      "autoCheckoutAtMidnight": true
+    },
+    "holidays": [],
+    "workSchedule": {
+      "id": "ws_default",
+      "name": "Standard General Shift",
+      "shiftType": "general",
+      "shiftStart": "09:00",
+      "shiftEnd": "17:00",
+      "breakMinutes": 60,
+      "workDays": [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri",
+        "Sat"
+      ]
+    }
+  },
+  "deviceBindings": {}
+}

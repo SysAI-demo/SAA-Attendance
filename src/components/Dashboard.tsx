@@ -140,13 +140,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const remainingPermissionsThisMonth = Math.max(0, monthlyPermissionQuota - usedPermissionsThisMonth);
 
   // Pending requests for this employee
-  const pendingLeaves = leaveRequests.filter(
-    (r) => r.employeeId === currentEmployee.id && r.status === 'pending'
+  const pendingLeaves = (leaveRequests || []).filter(
+    (r) => r.employeeId === currentEmployee?.id && r.status === 'pending'
   );
-  const pendingPermissions = permissionRequests.filter(
-    (r) => r.employeeId === currentEmployee.id && r.status === 'pending'
+  const pendingPermissions = (permissionRequests || []).filter(
+    (r) => r.employeeId === currentEmployee?.id && r.status === 'pending'
   );
-  const totalPendingRequests = pendingLeaves.length + pendingPermissions.length;
+  const totalPendingRequests = (pendingLeaves || []).length + (pendingPermissions || []).length;
 
   return (
     <div id="homepage-dashboard-view" className="max-w-7xl mx-auto space-y-6 pb-12">
@@ -605,7 +605,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   >
                     <span className="flex items-center gap-1.5">
                       <Send className="w-3.5 h-3.5 text-stone-700" />
-                      <span>Send Request to {manager.name.split(' ')[0]}</span>
+                      <span>Send Request to {manager?.name ? manager.name.split(' ')[0] : 'Manager'}</span>
                     </span>
                     <ChevronRight className="w-4 h-4 text-stone-600" />
                   </button>
@@ -617,7 +617,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   Senior Management Level
                 </p>
                 <p className="text-stone-500 text-[11px]">
-                  You lead the division with {directReports.length} direct team members reporting to your approval desk.
+                  You lead the division with {(directReports || []).length} direct team members reporting to your approval desk.
                 </p>
               </div>
             )}

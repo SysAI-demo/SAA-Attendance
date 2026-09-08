@@ -19,8 +19,6 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => {
   const {
     currentEmployee,
-    employees,
-    setCurrentEmployeeId,
     leaveRequests,
     permissionRequests,
     isMobileDeviceView,
@@ -28,8 +26,8 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => 
   } = useAttendance();
 
   const pendingCount =
-    leaveRequests.filter((l) => l.status === 'pending').length +
-    permissionRequests.filter((p) => p.status === 'pending').length;
+    (leaveRequests || []).filter((l) => l.status === 'pending').length +
+    (permissionRequests || []).filter((p) => p.status === 'pending').length;
 
   return (
     <header className="sticky top-0 z-50 bg-slate-900/95 border-b border-slate-800 backdrop-blur-md">
@@ -124,33 +122,19 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => 
 
           {/* Active User Switcher */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* Quick Switch Persona Dropdown */}
+            {/* Authenticated User Badge */}
             <div className="relative flex items-center gap-2 bg-slate-800/90 border border-slate-700/80 px-2.5 py-1.5 rounded-xl shadow-inner">
               <img
                 src={currentEmployee.avatar}
                 alt={currentEmployee.name}
                 className="w-7 h-7 rounded-full object-cover border border-indigo-500"
               />
-              <div className="text-left hidden lg:block">
+              <div className="text-left">
                 <span className="text-xs font-bold text-white block leading-none">{currentEmployee.name}</span>
                 <span className="text-[10px] text-slate-400 capitalize">
-                  {currentEmployee.role === 'manager' ? '⚡ Manager & Approver' : '👤 Employee'}
+                  {currentEmployee.role === 'manager' ? '⚡ Manager & Approver' : currentEmployee.role === 'hr' || currentEmployee.role === 'admin' ? '🛡️ Administrator' : '👤 Employee'}
                 </span>
               </div>
-
-              {/* Selector for testing different employees & permissions */}
-              <select
-                value={currentEmployee.id}
-                onChange={(e) => setCurrentEmployeeId(e.target.value)}
-                className="bg-transparent text-xs text-slate-300 focus:outline-none cursor-pointer pr-1"
-                title="Switch employee profile to test geofencing rules and approvals"
-              >
-                {employees.map((emp) => (
-                  <option key={emp.id} value={emp.id} className="bg-slate-900 text-white">
-                    {emp.name} ({emp.role === 'manager' ? 'Manager' : emp.department})
-                  </option>
-                ))}
-              </select>
             </div>
           </div>
         </div>

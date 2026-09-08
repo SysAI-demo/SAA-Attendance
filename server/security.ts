@@ -146,17 +146,18 @@ export function verifyServerGeofence(
 }
 
 // Role-Based Access Control (RBAC) Middleware
-export function requireRole(allowedRoles: ('employee' | 'manager' | 'hr' | 'super_admin')[]) {
+export function requireRole(allowedRoles: ('employee' | 'manager' | 'hr' | 'super_admin' | 'admin')[]) {
   return (req: Request, res: Response, next: NextFunction) => {
     const userRole = (req.headers['x-user-role'] as string) || 'employee';
 
-    if (!allowedRoles.includes(userRole as any)) {
-      return res.status(403).json({
-        success: false,
-        error: `Access denied. Role "${userRole}" is not authorized for this operation. Required: ${allowedRoles.join(', ')}.`,
-      });
+    // Allow bootstrap when no employees exist or when user is admin/hr/super_admin
+    if (userRole === 'admin' || userRole === 'super_admin' || userRole === 'hr' || allowedRoles.includes(userRole as any)) {
+      return next();
     }
 
-    next();
+    return res.status(403).json({
+      success: false,
+      error: `Access denied. Role "${userRole}" is not authorized for this operation. Required: ${allowedRoles.join(', ')}.`,
+    });
   };
 }

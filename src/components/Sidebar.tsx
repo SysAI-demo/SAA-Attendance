@@ -9,7 +9,6 @@ import {
   Users,
   SlidersHorizontal,
   X,
-  ChevronDown,
   UserCheck,
   Shield,
   LogOut,
@@ -42,12 +41,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const {
     currentEmployee,
-    employees,
-    setCurrentEmployeeId,
     leaveRequests,
     permissionRequests,
     isCurrentHR,
-    setActiveAppMode,
     logout,
     isDbConnected,
     isDbSyncing,
@@ -61,8 +57,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }, [isCurrentHR, currentTab, setCurrentTab]);
 
   const pendingCount =
-    leaveRequests.filter((l) => l.status === 'pending').length +
-    permissionRequests.filter((p) => p.status === 'pending').length;
+    (leaveRequests || []).filter((l) => l.status === 'pending').length +
+    (permissionRequests || []).filter((p) => p.status === 'pending').length;
 
   const navItems: {
     id: NavigationTab;
@@ -262,45 +258,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </div>
 
-            {/* Quick Switch User */}
-            <div className="pt-1.5 border-t border-[#ece4d6] flex items-center justify-between text-[10px]">
-              <span className="text-stone-500 font-bold">Switch Profile:</span>
-              <div className="relative">
-                <select
-                  id="user-switch-select"
-                  value={currentEmployee.id}
-                  onChange={(e) => setCurrentEmployeeId(e.target.value)}
-                  className="text-[11px] font-bold text-stone-800 bg-stone-50 border border-stone-200 rounded-lg px-2 py-0.5 pr-5 focus:outline-hidden cursor-pointer hover:bg-stone-100 transition-colors"
-                >
-                  {employees.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name} ({emp.role === 'manager' ? 'Manager' : emp.department})
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3 h-3 text-stone-500 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
+            {/* Authenticated Account Details */}
+            <div className="pt-2 border-t border-[#ece4d6] flex items-center justify-between text-[10.5px]">
+              <span className="text-stone-500 font-medium">Employee ID</span>
+              <span className="font-mono font-bold text-stone-800 bg-stone-100 px-1.5 py-0.5 rounded border border-stone-200">
+                {currentEmployee.employeeCode}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-[10.5px] pb-0.5">
+              <span className="text-stone-500 font-medium">Department</span>
+              <span className="font-bold text-stone-700 truncate max-w-[120px]">
+                {currentEmployee.department || 'Operations'}
+              </span>
             </div>
 
-            {/* Quick Actions (Mobile App + Logout) */}
-            <div className="pt-1.5 border-t border-[#ece4d6] grid grid-cols-2 gap-1.5">
+            {/* Quick Actions (Logout) */}
+            <div className="pt-1.5 border-t border-[#ece4d6]">
               <button
                 type="button"
-                onClick={() => {
-                  setActiveAppMode('mobile_app');
-                  setMobileOpen(false);
-                }}
-                className="w-full py-1.5 px-2 bg-stone-900 hover:bg-stone-800 text-stone-50 text-[10px] font-extrabold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-xs active:scale-98"
-              >
-                <Smartphone className="w-3 h-3 text-amber-400" />
-                <span>Mobile App</span>
-              </button>
-              <button
-                type="button"
+                id="sidebar-logout-btn"
                 onClick={logout}
-                className="w-full py-1.5 px-2 bg-stone-100 hover:bg-rose-50 border border-stone-200 hover:border-rose-200 text-stone-700 hover:text-rose-700 text-[10px] font-extrabold rounded-xl flex items-center justify-center gap-1 cursor-pointer transition-colors active:scale-98"
+                className="w-full py-2 px-3 bg-stone-100 hover:bg-rose-50 border border-stone-200 hover:border-rose-200 text-stone-700 hover:text-rose-700 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-colors active:scale-98"
               >
-                <LogOut className="w-3 h-3" />
+                <LogOut className="w-3.5 h-3.5" />
                 <span>Log Out</span>
               </button>
             </div>
