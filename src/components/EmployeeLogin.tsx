@@ -40,9 +40,9 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
     currentDevice,
   } = useAttendance();
 
-  // Login form state (prefilled with default HR admin credentials for immediate access)
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('password123');
+  // Login form state
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -73,8 +73,8 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
     setBiometricStatusMsg(type === 'fingerprint' ? 'Scanning fingerprint sensor...' : 'Authenticating Face ID geometry...');
 
     setTimeout(() => {
-      const savedUser = localStorage.getItem('saata_biometric_user') || username.trim() || employees[0]?.username || 'admin';
-      const savedPass = localStorage.getItem('saata_biometric_pass') || password.trim() || employees[0]?.password || 'password123';
+      const savedUser = localStorage.getItem('saata_biometric_user') || username.trim();
+      const savedPass = localStorage.getItem('saata_biometric_pass') || password.trim();
 
       if (!savedUser) {
         setBiometricScanning(false);
@@ -270,7 +270,7 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
                   if (deviceMismatchInfo) setDeviceMismatchInfo(null);
                 }}
                 placeholder="e.g. admin or EMP-001"
-                autoComplete="username"
+                autoComplete="off"
                 className="w-full bg-white/95 border border-[#CDBE9F] focus:border-stone-900 focus:ring-1 focus:ring-stone-900 rounded-xl text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 font-medium pl-10 pr-3 py-2.5 focus:outline-hidden transition-all shadow-2xs"
               />
             </div>
@@ -299,7 +299,7 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
                   if (deviceMismatchInfo) setDeviceMismatchInfo(null);
                 }}
                 placeholder="••••••••"
-                autoComplete="current-password"
+                autoComplete="off"
                 className="w-full bg-white/95 border border-[#CDBE9F] focus:border-stone-900 focus:ring-1 focus:ring-stone-900 rounded-xl text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 font-medium pl-10 pr-10 py-2.5 focus:outline-hidden transition-all shadow-2xs"
               />
               <button
