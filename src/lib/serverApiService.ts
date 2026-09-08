@@ -9,6 +9,7 @@ import {
   UserActivityLog,
   GeoCoordinates,
   EmployeeDeviceBinding,
+  ActiveMobileSession,
   LeaveDefinition,
   PermissionDefinition,
   GradeDefinition,
@@ -154,6 +155,36 @@ class ServerApiService {
       return res.ok;
     } catch {
       return false;
+    }
+  }
+
+  // ==============================================================
+  // 3b. MOBILE DEVICE & SESSION TRACKING
+  // ==============================================================
+  public async recordMobileSession(employeeId: string, session: ActiveMobileSession): Promise<Employee | null> {
+    try {
+      const res = await fetch('/api/auth/mobile-session', {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ employeeId, session }),
+      });
+      const data = await res.json();
+      return data.employee || null;
+    } catch (err) {
+      console.error('[ServerAPI] recordMobileSession error:', err);
+      return null;
+    }
+  }
+
+  public async clearMobileSession(employeeId: string): Promise<void> {
+    try {
+      await fetch('/api/auth/mobile-session/logout', {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({ employeeId }),
+      });
+    } catch (err) {
+      console.error('[ServerAPI] clearMobileSession error:', err);
     }
   }
 

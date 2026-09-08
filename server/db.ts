@@ -17,6 +17,7 @@ import {
   HolidayDefinition,
   WorkScheduleDefinition,
   EmployeeDeviceBinding,
+  ActiveMobileSession,
 } from '../src/types';
 import {
   INITIAL_EMPLOYEES,
@@ -221,6 +222,34 @@ class ServerDatabase {
 
     this.broadcast('employee_updated', employee);
     return employee;
+  }
+
+  public setEmployeeMobileSession(id: string, session: ActiveMobileSession): Employee | null {
+    const emp = this.data.employees.find((e) => e.id === id);
+    if (!emp) return null;
+
+    emp.isMobileLoggedIn = true;
+    emp.activeMobileSession = session;
+    if (session.deviceId) {
+      emp.deviceId = session.deviceId;
+    }
+    if (session.deviceName && emp.deviceBinding) {
+      emp.deviceBinding.lastLoginAt = session.loggedInAt;
+    }
+
+    this.broadcast('employee_updated', emp);
+    return emp;
+  }
+
+  public clearEmployeeMobileSession(id: string): Employee | null {
+    const emp = this.data.employees.find((e) => e.id === id);
+    if (!emp) return null;
+
+    emp.isMobileLoggedIn = false;
+    emp.activeMobileSession = null;
+
+    this.broadcast('employee_updated', emp);
+    return emp;
   }
 
   public deleteEmployee(id: string): boolean {

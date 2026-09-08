@@ -56,6 +56,19 @@ export interface EmployeeDeviceBinding {
   userAgent?: string;
 }
 
+export interface ActiveMobileSession {
+  sessionId: string;
+  deviceId: string;
+  deviceName: string;
+  platform: 'mobile' | 'desktop' | 'tablet';
+  os?: string;
+  browser?: string;
+  loggedInAt: string;
+  lastActiveAt: string;
+  ipAddress?: string;
+  isSingleMobileActive: boolean;
+}
+
 export interface Employee {
   id: string;
   name: string;
@@ -74,9 +87,11 @@ export interface Employee {
   joinedDate: string; // YYYY-MM-DD (Anniversary Anchor for automatic annual leave refill without carry-over)
   lastLeaveRefillDate?: string; // YYYY-MM-DD of the most recent annual anniversary refill
   
-  // Single-Device Hardware Binding
+  // Single-Device Hardware Binding & Active Mobile Session
   deviceId?: string | null; // Bound hardware ID (1 account -> 1 device). Only HR can reset.
   deviceBinding?: EmployeeDeviceBinding | null; // Detailed device metadata for HR audit and user feedback
+  isMobileLoggedIn?: boolean; // True when 1 active mobile session is logged in
+  activeMobileSession?: ActiveMobileSession | null; // Detailed live active mobile session
   
   annualLeaveAllowance?: {
     casual: number;

@@ -5,6 +5,7 @@ import { getEmployeeAnnualQuota } from '../utils/leaveAnniversaryUtils';
 import { WorkHoursBarChart } from './WorkHoursBarChart';
 import { PunchFeedbackCard, PunchFeedbackState } from './PunchFeedbackCard';
 import { PermissionType, LeaveType, LeaveDurationOption, AppNotification } from '../types';
+import { GeofenceMap } from './GeofenceMap';
 import confetti from 'canvas-confetti';
 import {
   Clock,
@@ -133,7 +134,50 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
     unreadNotificationCount,
     markNotificationAsRead,
     markAllNotificationsAsRead,
+    refreshGPSPosition,
+    updateOfficeLocation,
   } = useAttendance();
+
+  // GPS Radar & Refresh state
+  const [isRefreshingGPS, setIsRefreshingGPS] = useState<boolean>(false);
+  const [showRadarMap, setShowRadarMap] = useState<boolean>(false);
+  const [gpsRefreshMessage, setGpsRefreshMessage] = useState<string | null>(null);
+
+  const handleRefreshGPS = async () => {
+    setIsRefreshingGPS(true);
+    setGpsRefreshMessage(null);
+    try {
+      const res = await refreshGPSPosition();
+      if (res.success && res.coords) {
+        setGpsRefreshMessage(`GPS Refreshed: ±${Math.round(res.coords.accuracy)}m accuracy`);
+        setTimeout(() => setGpsRefreshMessage(null), 3500);
+      } else {
+        setGpsRefreshMessage(res.error || 'Failed to acquire GPS');
+        setTimeout(() => setGpsRefreshMessage(null), 4000);
+      }
+    } finally {
+      setIsRefreshingGPS(false);
+    }
+  };
+
+  const handleCalibrateOfficeToMyGPS = () => {
+    if (!detectedOffice) return;
+    const confirm = window.confirm(
+      `Set "${detectedOffice.name}" GPS coordinates to your current position (${currentCoords.latitude.toFixed(5)}, ${currentCoords.longitude.toFixed(5)})?`
+    );
+    if (confirm) {
+      updateOfficeLocation(
+        {
+          ...detectedOffice,
+          latitude: currentCoords.latitude,
+          longitude: currentCoords.longitude,
+        },
+        true
+      );
+      setGpsRefreshMessage(`Calibrated ${detectedOffice.name} to your live GPS coordinates!`);
+      setTimeout(() => setGpsRefreshMessage(null), 4000);
+    }
+  };
 
   // Active Bottom Navigation Tab
   const [activeTab, setActiveTab] = useState<MobileAppTab>('home');
@@ -916,38 +960,129 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
             {/* ========================================================== */}
             <div className="bg-white border border-[#ded4c5] rounded-2xl p-3.5 sm:p-4 space-y-3 shadow-2xs">
               
-              {/* Compact Current Office Location Bubble */}
-              <div className="flex items-center justify-between gap-2 p-2.5 bg-[#fbf9f5] border border-[#ded4c5] rounded-xl">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className={`p-1.5 rounded-lg shrink-0 ${
-                    geofenceResult.isInAllowedGeofence 
-                      ? 'bg-emerald-100 text-emerald-800' 
-                      : 'bg-stone-100 text-stone-700'
-                  }`}>
-                    <MapPin className="w-3.5 h-3.5" />
+              {/* Live Geofence & GPS Radar Terminal Widget */}
+              <div className="bg-[#fbf9f5] border border-[#ded4c5] rounded-2xl p-3 sm:p-3.5 space-y-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold shrink-0 shadow-xs ${
+                        geofenceResult.isInAllowedGeofence
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-amber-500 text-white'
+                      }`}
+                    >
+                      {geofenceResult.isInAllowedGeofence ? '✓' : '📍'}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[9px] uppercase font-extrabold text-stone-500 tracking-wider">
+                          Office Geofence
+                        </span>
+                        <span
+                          className={`text-[9px] font-extrabold uppercase px-2 py-0.2 rounded-full border inline-flex items-center gap-1 ${
+                            geofenceResult.isInAllowedGeofence
+                              ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                              : 'bg-amber-100 text-amber-900 border-amber-300'
+                          }`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              geofenceResult.isInAllowedGeofence ? 'bg-emerald-600 animate-pulse' : 'bg-amber-600'
+                            }`}
+                          />
+                          {geofenceResult.isInAllowedGeofence ? 'Inside Geofence' : 'Outside Geofence'}
+                        </span>
+                      </div>
+                      <h4 className="font-extrabold text-stone-900 text-xs sm:text-sm truncate">
+                        {detectedOffice.name}
+                      </h4>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <span className="text-[9px] uppercase font-extrabold text-stone-600 block leading-tight">
-                      Current Office
-                    </span>
-                    <span className="font-extrabold text-stone-900 text-xs truncate block leading-tight">
-                      {detectedOffice.name}
-                    </span>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      id="btn-mobile-refresh-gps"
+                      onClick={handleRefreshGPS}
+                      disabled={isRefreshingGPS}
+                      title="Force refresh live GPS position from phone hardware"
+                      className="px-2 py-1 bg-white hover:bg-stone-100 text-stone-800 border border-[#ded4c5] rounded-lg text-[10px] font-bold flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isRefreshingGPS ? 'animate-spin text-emerald-600' : ''}`} />
+                      <span>{isRefreshingGPS ? 'Locating...' : 'Refresh GPS'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowRadarMap(!showRadarMap)}
+                      title="Toggle radar map view"
+                      className={`p-1 rounded-lg border text-[10px] font-bold transition-colors cursor-pointer ${
+                        showRadarMap
+                          ? 'bg-stone-900 text-white border-stone-900'
+                          : 'bg-white hover:bg-stone-100 text-stone-700 border-[#ded4c5]'
+                      }`}
+                    >
+                      <Compass className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
 
-                <div className="shrink-0">
-                  <span
-                    className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full border inline-flex items-center gap-1 tracking-wider ${
-                      geofenceResult.isInAllowedGeofence
-                        ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                        : 'bg-amber-100 text-amber-900 border-amber-300'
-                    }`}
-                  >
-                    <span className={`w-1.5 h-1.5 rounded-full ${geofenceResult.isInAllowedGeofence ? 'bg-emerald-600 animate-pulse' : 'bg-amber-600'}`} />
-                    {geofenceResult.isInAllowedGeofence ? 'Inside' : 'Near'}
-                  </span>
+                {/* Distance & GPS Diagnostics */}
+                <div className="bg-white p-2.5 rounded-xl border border-[#ded4c5] space-y-1.5 text-[11px]">
+                  <div className="flex items-center justify-between text-stone-700">
+                    <span className="text-stone-500 font-mono">Distance to center:</span>
+                    <span className="font-bold font-mono text-stone-900">
+                      {formatDistance(geofenceResult.distanceToNearestMeters)}{' '}
+                      <span className="text-stone-400 font-normal font-sans">(Allowed: {detectedOffice.radiusMeters}m)</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-[10px] text-stone-500 font-mono pt-1 border-t border-stone-100">
+                    <span>GPS: {currentCoords.latitude.toFixed(5)}, {currentCoords.longitude.toFixed(5)}</span>
+                    <span className="text-stone-600">±{Math.round(currentCoords.accuracy)}m {isUsingRealGPS ? '(Live GPS)' : '(Simulated)'}</span>
+                  </div>
                 </div>
+
+                {gpsRefreshMessage && (
+                  <div className="text-[10px] font-medium text-emerald-900 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg flex items-center gap-1.5 animate-in fade-in">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span>{gpsRefreshMessage}</span>
+                  </div>
+                )}
+
+                {/* Helpful calibration guidance when outside geofence */}
+                {!geofenceResult.isInAllowedGeofence && (
+                  <div className="bg-amber-50 border border-amber-200/90 rounded-xl p-2.5 space-y-1.5 text-[11px] text-amber-950">
+                    <div className="flex items-start gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
+                      <p className="leading-snug">
+                        {geofenceResult.statusMessage}
+                      </p>
+                    </div>
+
+                    {(isCurrentHR || currentEmployee.role === 'admin') && (
+                      <div className="pt-1 flex items-center justify-between gap-2 border-t border-amber-200">
+                        <span className="text-[10px] text-amber-900 font-semibold">HR Admin Quick Action:</span>
+                        <button
+                          type="button"
+                          onClick={handleCalibrateOfficeToMyGPS}
+                          className="text-[10px] font-bold text-amber-950 bg-amber-200/90 hover:bg-amber-300 px-2 py-0.5 rounded-md transition-colors cursor-pointer"
+                        >
+                          📍 Set "{detectedOffice.name}" to My Current GPS
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Collapsible Radar Map */}
+                {showRadarMap && (
+                  <div className="pt-1 animate-in fade-in zoom-in-95 duration-200 space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px] text-stone-500">
+                      <span className="font-bold text-stone-700">Live GPS Radar Map</span>
+                      <span>Tap anywhere on map to test position</span>
+                    </div>
+                    <GeofenceMap height="200px" allowClickToTeleport={true} />
+                  </div>
+                )}
               </div>
 
               {/* Punch Notes Input */}

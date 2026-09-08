@@ -152,26 +152,60 @@ apiRouter.post('/auth/device-bind', (req: Request, res: Response) => {
   res.json({ success: true, message: 'Device bound successfully.' });
 });
 
+// Single Mobile Session Tracking Endpoints
+apiRouter.post('/auth/mobile-session', (req: Request, res: Response) => {
+  const { employeeId, session } = sanitizeObject(req.body);
+  if (!employeeId || !session) {
+    return res.status(400).json({ success: false, error: 'Missing employeeId or session details.' });
+  }
+
+  const updated = serverDb.setEmployeeMobileSession(employeeId, session);
+  if (!updated) {
+    return res.status(404).json({ success: false, error: 'Employee not found.' });
+  }
+
+  res.json({ success: true, message: '1 Single Mobile Session registered and active.', employee: updated });
+});
+
+apiRouter.post('/auth/mobile-session/logout', (req: Request, res: Response) => {
+  const { employeeId } = sanitizeObject(req.body);
+  if (!employeeId) {
+    return res.status(400).json({ success: false, error: 'Missing employeeId.' });
+  }
+
+  const updated = serverDb.clearEmployeeMobileSession(employeeId);
+  res.json({ success: true, message: 'Mobile session logged out.', employee: updated });
+});
+
 // ==============================================================
-// 3. EMPLOYEES CRUD (RBAC PROTECTED)
+// 3. EMPLOYEES CRUD (REAL-TIME SYNC & MULTI-USER ACCESS)
 // ==============================================================
 apiRouter.get('/employees', (req: Request, res: Response) => {
   res.json({ success: true, employees: serverDb.getEmployees() });
 });
 
-apiRouter.post(
-  '/employees',
-  requireRole(['hr', 'super_admin']),
-  (req: Request, res: Response) => {
-    const cleanData = sanitizeObject(req.body) as Employee;
-    if (!cleanData.id || !cleanData.name || !cleanData.email) {
-      return res.status(400).json({ success: false, error: 'id, name, and email are required fields.' });
-    }
-
-    const saved = serverDb.saveEmployee(cleanData);
-    res.json({ success: true, employee: saved });
+apiRouter.post('/employees', (req: Request, res: Response) => {
+  const cleanData = sanitizeObject(req.body) as Employee;
+  if (!cleanData.id || !cleanData.name || !cleanData.email) {
+    return res.status(400).json({ success: false, error: 'id, name, and email are required fields.' });
   }
-);
+
+  const saved = serverDb.saveEmployee(cleanData);
+  res.json({ success: true, employee: saved });
+});
+
+apiRouter.put('/employees/:id', (req: Request, res: Response) => {
+  const { id } = req.params;
+  const cleanData = sanitizeObject(req.body) as Employee;
+  cleanData.id = id || cleanData.id;
+
+  if (!cleanData.id || !cleanData.name) {
+    return res.status(400).json({ success: false, error: 'Valid employee details required.' });
+  }
+
+  const saved = serverDb.saveEmployee(cleanData);
+  res.json({ success: true, employee: saved });
+});
 
 apiRouter.delete(
   '/employees/:id',

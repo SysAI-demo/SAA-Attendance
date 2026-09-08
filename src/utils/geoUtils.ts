@@ -42,7 +42,15 @@ export function checkGeofenceStatus(
     };
   }
 
-  // Calculate distance to all locations
+  const isGlobalAllowed =
+    !allowedLocationIds ||
+    allowedLocationIds.length === 0 ||
+    allowedLocationIds.includes('*') ||
+    allowedLocationIds.includes('all');
+
+  // Calculate distance to all locations with GPS accuracy tolerance buffer
+  const accuracyBuffer = Math.min(35, Math.max(5, (coords.accuracy || 10) * 0.4));
+
   const locationsWithDist = allLocations.map((loc) => {
     const dist = calculateDistanceMeters(
       coords.latitude,
@@ -50,14 +58,17 @@ export function checkGeofenceStatus(
       loc.latitude,
       loc.longitude
     );
-    const isInsideRadius = dist <= loc.radiusMeters;
-    const isAllowedForEmployee = allowedLocationIds.includes(loc.id);
+    // Inside if distance is within the location radius plus device GPS accuracy margin
+    const effectiveRadius = loc.radiusMeters + accuracyBuffer;
+    const isInsideRadius = dist <= effectiveRadius;
+    const isAllowedForEmployee = isGlobalAllowed || allowedLocationIds.includes(loc.id);
 
     return {
       location: loc,
       distance: dist,
       isInsideRadius,
       isAllowedForEmployee,
+      effectiveRadius,
     };
   });
 
@@ -65,12 +76,12 @@ export function checkGeofenceStatus(
   locationsWithDist.sort((a, b) => a.distance - b.distance);
   const nearest = locationsWithDist[0];
 
-  // Check if inside any authorized location
+  // Check if inside any authorized active location
   const matchingAuthorized = locationsWithDist.find(
     (item) => item.isInsideRadius && item.isAllowedForEmployee && item.location.isActive
   );
 
-  // Check if inside an unauthorized location
+  // Check if inside an unauthorized active location
   const matchingUnauthorized = locationsWithDist.find(
     (item) => item.isInsideRadius && !item.isAllowedForEmployee && item.location.isActive
   );
@@ -82,8 +93,8 @@ export function checkGeofenceStatus(
       activeAuthorizedLocation: matchingAuthorized.location,
       distanceToNearestMeters: matchingAuthorized.distance,
       isAuthorizedLocation: true,
-      statusMessage: `Verified! You are inside authorized office geofence "${matchingAuthorized.location.name}" (${matchingAuthorized.distance}m from center point, allowed radius: ${matchingAuthorized.location.radiusMeters}m).`,
-      accuracyAlert: coords.accuracy > 50 ? `GPS Accuracy is ±${Math.round(coords.accuracy)}m. Ensure you have clear sky visibility.` : undefined,
+      statusMessage: `Verified! You are inside authorized office geofence "${matchingAuthorized.location.name}" (${matchingAuthorized.distance}m from center, radius: ${matchingAuthorized.location.radiusMeters}m).`,
+      accuracyAlert: coords.accuracy > 50 ? `GPS Accuracy is ±${Math.round(coords.accuracy)}m. Sky visibility is clear.` : undefined,
     };
   }
 
@@ -93,16 +104,16 @@ export function checkGeofenceStatus(
       nearestLocation: matchingUnauthorized.location,
       distanceToNearestMeters: matchingUnauthorized.distance,
       isAuthorizedLocation: false,
-      statusMessage: `Location Restriction: You are at "${matchingUnauthorized.location.name}", but your profile is NOT authorized to mark attendance at this office. Please check your assigned branch locations.`,
+      statusMessage: `Location Restriction: You are at "${matchingUnauthorized.location.name}", but your profile is not assigned to this office. Please ask HR to add this branch to your authorized locations.`,
       accuracyAlert: undefined,
     };
   }
 
   // Outside all geofences
-  const nearestAllowed = locationsWithDist.find(item => item.isAllowedForEmployee);
+  const nearestAllowed = locationsWithDist.find((item) => item.isAllowedForEmployee);
   const targetLocation = nearestAllowed || nearest;
 
-  const diffDistance = targetLocation.distance - targetLocation.location.radiusMeters;
+  const diffDistance = Math.max(1, targetLocation.distance - targetLocation.location.radiusMeters);
   const distanceFormatted = formatDistance(targetLocation.distance);
 
   return {
@@ -110,8 +121,8 @@ export function checkGeofenceStatus(
     nearestLocation: targetLocation.location,
     distanceToNearestMeters: targetLocation.distance,
     isAuthorizedLocation: targetLocation.isAllowedForEmployee,
-    statusMessage: `Out of Geofence: You are ${distanceFormatted} away from "${targetLocation.location.name}" (Allowed radius: ${targetLocation.location.radiusMeters}m). You need to be ${formatDistance(Math.max(1, diffDistance))} closer to mark attendance.`,
-    accuracyAlert: coords.accuracy > 70 ? `GPS Accuracy is ±${Math.round(coords.accuracy)}m. GPS signal might be weak.` : undefined,
+    statusMessage: `Out of Geofence: You are ${distanceFormatted} away from "${targetLocation.location.name}" (Allowed radius: ${targetLocation.location.radiusMeters}m). Move ${formatDistance(diffDistance)} closer or update office GPS coordinates.`,
+    accuracyAlert: coords.accuracy > 65 ? `GPS Accuracy is ±${Math.round(coords.accuracy)}m. Ensure Location Services / High Accuracy is enabled.` : undefined,
   };
 }
 

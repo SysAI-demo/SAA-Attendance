@@ -271,6 +271,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 {currentEmployee.department || 'Operations'}
               </span>
             </div>
+            <div className="flex items-center justify-between text-[10.5px] pb-0.5">
+              <span className="text-stone-500 font-medium">Mobile Device</span>
+              {currentEmployee.isMobileLoggedIn || currentEmployee.activeMobileSession ? (
+                <span className="inline-flex items-center gap-1 font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-1.5 py-0.5 rounded text-[9.5px]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>1 Mobile Active</span>
+                </span>
+              ) : currentEmployee.deviceId ? (
+                <span className="text-stone-600 font-medium text-[9.5px] truncate max-w-[120px]" title={currentEmployee.deviceBinding?.deviceName || currentEmployee.deviceId}>
+                  📱 {currentEmployee.deviceBinding?.deviceName || '1 Bound (Offline)'}
+                </span>
+              ) : (
+                <span className="text-stone-400 italic text-[9.5px]">Auto-binds on login</span>
+              )}
+            </div>
 
             {/* Quick Actions (Logout) */}
             <div className="pt-1.5 border-t border-[#ece4d6]">

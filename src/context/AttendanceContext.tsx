@@ -25,6 +25,7 @@ import {
   ActivityLogCategory,
   ActivityLogType,
   EmployeeDeviceBinding,
+  ActiveMobileSession,
 } from '../types';
 import {
   INITIAL_OFFICE_LOCATIONS,
@@ -83,6 +84,7 @@ interface AttendanceContextType {
   gpsError: string | null;
   setManualLocation: (lat: number, lng: number, accuracy?: number) => void;
   enableRealGPS: () => Promise<void>;
+  refreshGPSPosition: () => Promise<{ success: boolean; coords?: GeoCoordinates; error?: string }>;
   
   // Actions
   markCheckIn: (notes?: string) => PunchActionResult;
@@ -144,13 +146,15 @@ interface AttendanceContextType {
   deleteEmployee: (employeeId: string) => void;
   toggleEmployeeLoginAccess: (employeeId: string, canLogin?: boolean) => { success: boolean; message: string; isEnabled: boolean };
   resetEmployeeDeviceBinding: (employeeId: string) => { success: boolean; message: string };
+  terminateEmployeeMobileSession: (employeeId: string) => { success: boolean; message: string };
   refillEmployeeLeavesForAnniversary: (employeeId: string) => { success: boolean; message: string };
   runAnniversaryLeaveRefills: () => { count: number; message: string };
   
   // Admin/Manager Configuration
   updateEmployeeLocations: (employeeId: string, allowedLocationIds: string[]) => void;
-  addOfficeLocation: (location: Omit<OfficeLocation, 'id'>) => void;
-  updateOfficeLocation: (location: OfficeLocation) => void;
+  addOfficeLocation: (location: Omit<OfficeLocation, 'id'>, assignToAll?: boolean) => void;
+  updateOfficeLocation: (location: OfficeLocation, assignToAll?: boolean) => void;
+  deleteOfficeLocation: (locationId: string) => void;
   
   // Definitions Management (HR & Super Admin)
   leaveDefinitions: LeaveDefinition[];
@@ -602,6 +606,19 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           }
         });
         unsubs.push(unsubSSE);
+
+        // Periodic background state reconciliation (every 4 seconds) to guarantee real-time colleague sync
+        const syncInterval = setInterval(async () => {
+          try {
+            const freshState = await serverApiService.fetchFullSync();
+            if (freshState && Array.isArray(freshState.employees) && freshState.employees.length > 0) {
+              setEmployees(freshState.employees);
+            }
+          } catch {
+            // silent background retry
+          }
+        }, 4000);
+        unsubs.push(() => clearInterval(syncInterval));
       } catch (err) {
         console.warn('Server database sync error, using local resilience:', err);
         setIsDbConnected(true);
@@ -834,7 +851,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       : activeDev.isMobile;
 
     if (isMobileSession) {
-      // MOBILE APPLICATION: Strict 1-Device Hardware Binding
+      // MOBILE APPLICATION: Strict 1-Device Hardware Binding & Single Active Mobile Session
       if (!matched.deviceId) {
         // First-time mobile sign-in or HR reset: auto-bind this mobile device
         const boundBinding: EmployeeDeviceBinding = {
@@ -843,14 +860,30 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           lastLoginAt: new Date().toISOString(),
         };
 
+        const activeSession: ActiveMobileSession = {
+          sessionId: `sess_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          deviceId: boundBinding.deviceId,
+          deviceName: boundBinding.deviceName,
+          platform: 'mobile',
+          os: boundBinding.os,
+          browser: boundBinding.browser,
+          loggedInAt: new Date().toISOString(),
+          lastActiveAt: new Date().toISOString(),
+          ipAddress: boundBinding.ipAddress || '192.168.1.102',
+          isSingleMobileActive: true,
+        };
+
         const updatedEmp: Employee = {
           ...matched,
           deviceId: boundBinding.deviceId,
           deviceBinding: boundBinding,
+          isMobileLoggedIn: true,
+          activeMobileSession: activeSession,
         };
 
         setEmployees((prev) => prev.map((e) => (e.id === matched.id ? updatedEmp : e)));
         firestoreService.saveEmployee(updatedEmp).catch(console.error);
+        serverApiService.recordMobileSession(matched.id, activeSession).catch(console.error);
 
         logUserActivity({
           employeeId: matched.id,
@@ -910,12 +943,29 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           ...(matched.deviceBinding || activeDev),
           lastLoginAt: new Date().toISOString(),
         };
+
+        const activeSession: ActiveMobileSession = {
+          sessionId: `sess_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          deviceId: updatedBinding.deviceId,
+          deviceName: updatedBinding.deviceName,
+          platform: 'mobile',
+          os: updatedBinding.os,
+          browser: updatedBinding.browser,
+          loggedInAt: new Date().toISOString(),
+          lastActiveAt: new Date().toISOString(),
+          ipAddress: updatedBinding.ipAddress || '192.168.1.102',
+          isSingleMobileActive: true,
+        };
+
         const updatedEmp: Employee = {
           ...matched,
           deviceBinding: updatedBinding,
+          isMobileLoggedIn: true,
+          activeMobileSession: activeSession,
         };
         setEmployees((prev) => prev.map((e) => (e.id === matched.id ? updatedEmp : e)));
         firestoreService.saveEmployee(updatedEmp).catch(console.error);
+        serverApiService.recordMobileSession(matched.id, activeSession).catch(console.error);
       }
     } else {
       // DESKTOP WORKSTATION / WEB ACCESS:
@@ -952,7 +1002,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         type: 'login',
         category: 'auth',
         title: 'Mobile Session Login',
-        description: `Signed in successfully on registered mobile device "${activeDev.deviceName}" as ${matched.name} (${matched.role.toUpperCase()})`,
+        description: `Signed in successfully on registered single mobile device "${activeDev.deviceName}" as ${matched.name} (${matched.role.toUpperCase()})`,
         status: 'success',
         deviceInfo: activeDev.deviceName,
         metadata: {
@@ -979,6 +1029,17 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   };
 
   const logout = () => {
+    if (currentEmployee && currentEmployee.id) {
+      const updatedEmp: Employee = {
+        ...currentEmployee,
+        isMobileLoggedIn: false,
+        activeMobileSession: null,
+      };
+      setEmployees((prev) => prev.map((e) => (e.id === currentEmployee.id ? updatedEmp : e)));
+      firestoreService.saveEmployee(updatedEmp).catch(console.error);
+      serverApiService.clearMobileSession(currentEmployee.id).catch(console.error);
+    }
+
     // Record Logout Activity Log
     logUserActivity({
       employeeId: currentEmployee.id,
@@ -987,44 +1048,51 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       department: currentEmployee.department,
       type: 'logout',
       category: 'auth',
-      title: 'Mobile Session Logout',
-      description: `${currentEmployee.name} logged out from the mobile app.`,
+      title: 'Session Logout',
+      description: `${currentEmployee.name} logged out from the application.`,
       status: 'info',
-      deviceInfo: 'Mobile Client',
+      deviceInfo: 'Client App',
     });
 
     setIsAuthenticated(false);
     localStorage.setItem('geofence_att_auth_v1', 'false');
   };
 
-  // Real GPS handler
-  const enableRealGPS = async () => {
-    if (!navigator.geolocation) {
-      setGpsError('Geolocation is not supported by this browser.');
-      return;
+  // Real GPS handler & live position refresh
+  const refreshGPSPosition = useCallback(async (): Promise<{ success: boolean; coords?: GeoCoordinates; error?: string }> => {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
+      const err = 'Geolocation is not supported by this browser or device.';
+      setGpsError(err);
+      return { success: false, error: err };
     }
 
-    setGpsError(null);
-    try {
+    return new Promise((resolve) => {
+      setGpsError(null);
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          setCurrentCoords({
+          const freshCoords: GeoCoordinates = {
             latitude: pos.coords.latitude,
             longitude: pos.coords.longitude,
             accuracy: pos.coords.accuracy || 10,
             timestamp: pos.timestamp,
-          });
+          };
+          setCurrentCoords(freshCoords);
           setIsUsingRealGPS(true);
+          setGpsError(null);
+          resolve({ success: true, coords: freshCoords });
         },
         (err) => {
-          setGpsError(`GPS Error: ${err.message} (Using office simulator coordinates)`);
-          setIsUsingRealGPS(false);
+          const errMsg = `GPS: ${err.message || 'Unable to retrieve location'}.`;
+          setGpsError(errMsg);
+          resolve({ success: false, error: errMsg });
         },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
       );
-    } catch {
-      setGpsError('Failed to access device GPS.');
-    }
+    });
+  }, []);
+
+  const enableRealGPS = async () => {
+    await refreshGPSPosition();
   };
 
   const setManualLocation = (lat: number, lng: number, accuracy: number = 8) => {
@@ -1809,10 +1877,13 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         ...targetEmp,
         deviceId: null,
         deviceBinding: null,
+        isMobileLoggedIn: false,
+        activeMobileSession: null,
       };
 
       setEmployees((prev) => prev.map((e) => (e.id === employeeId ? updatedEmp : e)));
       firestoreService.saveEmployee(updatedEmp).catch(console.error);
+      serverApiService.clearMobileSession(employeeId).catch(console.error);
 
       // Log HR activity
       logUserActivity({
@@ -1841,6 +1912,42 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       };
     },
     [employees, currentEmployee, logUserActivity, createNotification]
+  );
+
+  // HR Terminate Active Mobile Session
+  const terminateEmployeeMobileSession = useCallback(
+    (employeeId: string) => {
+      const targetEmp = employees.find((e) => e.id === employeeId);
+      if (!targetEmp) return { success: false, message: 'Employee not found.' };
+
+      const updatedEmp: Employee = {
+        ...targetEmp,
+        isMobileLoggedIn: false,
+        activeMobileSession: null,
+      };
+
+      setEmployees((prev) => prev.map((e) => (e.id === employeeId ? updatedEmp : e)));
+      firestoreService.saveEmployee(updatedEmp).catch(console.error);
+      serverApiService.clearMobileSession(employeeId).catch(console.error);
+
+      logUserActivity({
+        employeeId: currentEmployee.id,
+        employeeName: currentEmployee.name,
+        employeeCode: currentEmployee.employeeCode,
+        department: currentEmployee.department,
+        type: 'security_alert',
+        category: 'hr',
+        title: 'Mobile Session Terminated',
+        description: `HR Administrator ${currentEmployee.name} terminated the active single mobile session for ${targetEmp.name} (${targetEmp.employeeCode}).`,
+        status: 'info',
+      });
+
+      return {
+        success: true,
+        message: `Active mobile session for ${targetEmp.name} has been terminated.`,
+      };
+    },
+    [employees, currentEmployee, logUserActivity]
   );
 
   // Automated & Manual Anniversary Leave Refill Engine (No Carryover)
@@ -1937,18 +2044,62 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     firestoreService.saveEmployee(updated).catch(console.error);
   };
 
-  const addOfficeLocation = (locData: Omit<OfficeLocation, 'id'>) => {
+  const addOfficeLocation = (locData: Omit<OfficeLocation, 'id'>, assignToAll: boolean = true) => {
     const newLoc: OfficeLocation = {
       ...locData,
       id: `loc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
     };
     setOfficeLocations((prev) => [...prev, newLoc]);
     firestoreService.saveLocation(newLoc).catch(console.error);
+
+    if (assignToAll) {
+      setEmployees((prev) =>
+        prev.map((emp) => {
+          const existing = emp.allowedLocationIds || [];
+          if (!existing.includes(newLoc.id)) {
+            const updatedEmp = { ...emp, allowedLocationIds: [...existing, newLoc.id] };
+            firestoreService.saveEmployee(updatedEmp).catch(console.error);
+            return updatedEmp;
+          }
+          return emp;
+        })
+      );
+    }
   };
 
-  const updateOfficeLocation = (updated: OfficeLocation) => {
+  const updateOfficeLocation = (updated: OfficeLocation, assignToAll?: boolean) => {
     setOfficeLocations((prev) => prev.map((loc) => (loc.id === updated.id ? updated : loc)));
     firestoreService.saveLocation(updated).catch(console.error);
+
+    if (assignToAll) {
+      setEmployees((prev) =>
+        prev.map((emp) => {
+          const existing = emp.allowedLocationIds || [];
+          if (!existing.includes(updated.id)) {
+            const updatedEmp = { ...emp, allowedLocationIds: [...existing, updated.id] };
+            firestoreService.saveEmployee(updatedEmp).catch(console.error);
+            return updatedEmp;
+          }
+          return emp;
+        })
+      );
+    }
+  };
+
+  const deleteOfficeLocation = (id: string) => {
+    setOfficeLocations((prev) => prev.filter((loc) => loc.id !== id));
+    firestoreService.deleteLocation(id).catch(console.error);
+
+    setEmployees((prev) =>
+      prev.map((emp) => {
+        if (emp.allowedLocationIds?.includes(id)) {
+          const updatedEmp = { ...emp, allowedLocationIds: emp.allowedLocationIds.filter((locId) => locId !== id) };
+          firestoreService.saveEmployee(updatedEmp).catch(console.error);
+          return updatedEmp;
+        }
+        return emp;
+      })
+    );
   };
 
   // Definitions Handlers with Firestore Persistence
@@ -2342,6 +2493,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         gpsError,
         setManualLocation,
         enableRealGPS,
+        refreshGPSPosition,
         markCheckIn,
         markCheckOut,
         todayRecord,
@@ -2365,11 +2517,13 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         deleteEmployee,
         toggleEmployeeLoginAccess,
         resetEmployeeDeviceBinding,
+        terminateEmployeeMobileSession,
         refillEmployeeLeavesForAnniversary,
         runAnniversaryLeaveRefills,
         updateEmployeeLocations,
         addOfficeLocation,
         updateOfficeLocation,
+        deleteOfficeLocation,
         leaveDefinitions,
         updateLeaveDefinition,
         addLeaveDefinition,
