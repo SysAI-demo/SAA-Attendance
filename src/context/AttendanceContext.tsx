@@ -157,6 +157,7 @@ interface AttendanceContextType {
   
   // Admin/Manager Configuration
   updateEmployeeLocations: (employeeId: string, allowedLocationIds: string[]) => void;
+  updateEmployeeShift: (employeeIds: string[], shiftTimingId: string | null, workScheduleId?: string) => void;
   addOfficeLocation: (location: Omit<OfficeLocation, 'id'>, assignToAll?: boolean) => void;
   updateOfficeLocation: (location: OfficeLocation, assignToAll?: boolean) => void;
   deleteOfficeLocation: (locationId: string) => void;
@@ -402,11 +403,14 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, []);
 
   // GPS State
-  const [currentCoords, setCurrentCoords] = useState<GeoCoordinates>({
-    latitude: 37.789180,
-    longitude: -122.401420,
-    accuracy: 8,
-    timestamp: Date.now(),
+  const [currentCoords, setCurrentCoords] = useState<GeoCoordinates>(() => {
+    const defaultLoc = officeLocations && officeLocations.length > 0 ? officeLocations[0] : DEFAULT_HQ_LOCATION;
+    return {
+      latitude: defaultLoc.latitude,
+      longitude: defaultLoc.longitude,
+      accuracy: 10,
+      timestamp: Date.now(),
+    };
   });
   const [isUsingRealGPS, setIsUsingRealGPS] = useState<boolean>(true);
   const [gpsError, setGpsError] = useState<string | null>(null);
@@ -414,7 +418,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [hasAcquiredRealGPS, setHasAcquiredRealGPS] = useState<boolean>(false);
   const [isLocating, setIsLocating] = useState<boolean>(false);
 
-  // Dedicated device location permission request
+  // Dedicated device location permission request with high-accuracy -> standard-accuracy fallback
   const requestLocationPermission = useCallback(async (): Promise<{ success: boolean; coords?: GeoCoordinates; error?: string }> => {
     if (typeof window === 'undefined' || !navigator.geolocation) {
       const err = 'Geolocation is not supported by this browser or device.';
@@ -426,45 +430,62 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setIsLocating(true);
     setGpsError(null);
 
-    return new Promise((resolve) => {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          const freshCoords: GeoCoordinates = {
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            accuracy: pos.coords.accuracy || 10,
-            timestamp: pos.timestamp,
-          };
-          setCurrentCoords(freshCoords);
-          setIsUsingRealGPS(true);
-          setHasAcquiredRealGPS(true);
-          setLocationPermissionStatus('granted');
-          setGpsError(null);
-          setIsLocating(false);
-          resolve({ success: true, coords: freshCoords });
-        },
-        (err) => {
-          setIsLocating(false);
-          let errMsg = 'Unable to retrieve location.';
-          if (err.code === err.PERMISSION_DENIED) {
-            errMsg = 'Location permission was denied. Please allow location access in your browser settings.';
-            setLocationPermissionStatus('denied');
-          } else if (err.code === err.POSITION_UNAVAILABLE) {
-            errMsg = 'Device location position is unavailable. Please make sure location/GPS is enabled on your phone.';
-          } else if (err.code === err.TIMEOUT) {
-            errMsg = 'Location request timed out. Please tap retry.';
-          } else {
-            errMsg = err.message || errMsg;
-          }
-          setGpsError(errMsg);
-          resolve({ success: false, error: errMsg });
-        },
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-      );
-    });
+    const tryGetPosition = (highAccuracy: boolean, timeoutMs: number): Promise<{ success: boolean; coords?: GeoCoordinates; error?: string; errorCode?: number }> => {
+      return new Promise((resolve) => {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const freshCoords: GeoCoordinates = {
+              latitude: pos.coords.latitude,
+              longitude: pos.coords.longitude,
+              accuracy: pos.coords.accuracy || 10,
+              timestamp: pos.timestamp,
+            };
+            setCurrentCoords(freshCoords);
+            setIsUsingRealGPS(true);
+            setHasAcquiredRealGPS(true);
+            setLocationPermissionStatus('granted');
+            setGpsError(null);
+            setIsLocating(false);
+            resolve({ success: true, coords: freshCoords });
+          },
+          (err) => {
+            resolve({ success: false, error: err.message, errorCode: err.code });
+          },
+          { enableHighAccuracy: highAccuracy, timeout: timeoutMs, maximumAge: 0 }
+        );
+      });
+    };
+
+    // First Attempt: High Accuracy (GPS Chip) with 6s timeout
+    let attempt = await tryGetPosition(true, 6000);
+
+    // Second Attempt: Fast Standard Accuracy (Wi-Fi / Cell towers) if high accuracy timed out or failed
+    if (!attempt.success && attempt.errorCode !== 1) { // 1 = PERMISSION_DENIED
+      attempt = await tryGetPosition(false, 10000);
+    }
+
+    if (attempt.success) {
+      return attempt;
+    }
+
+    setIsLocating(false);
+    let errMsg = 'Unable to retrieve location.';
+    if (attempt.errorCode === 1) { // PERMISSION_DENIED
+      errMsg = 'Location permission was denied. Please allow location access in your browser or phone settings.';
+      setLocationPermissionStatus('denied');
+    } else if (attempt.errorCode === 2) { // POSITION_UNAVAILABLE
+      errMsg = 'Device location position is unavailable. Please check that GPS/Location is turned on in your phone settings.';
+    } else if (attempt.errorCode === 3) { // TIMEOUT
+      errMsg = 'Location request timed out. Please tap "Refresh GPS" to re-try.';
+    } else {
+      errMsg = attempt.error || errMsg;
+    }
+
+    setGpsError(errMsg);
+    return { success: false, error: errMsg };
   }, []);
 
-  // Auto-check permission state and watch device position
+  // Auto-trigger location detection on mount and watch continuous movement
   useEffect(() => {
     if (!navigator.geolocation) {
       setLocationPermissionStatus('unsupported');
@@ -472,39 +493,43 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       return;
     }
 
-    // Check browser permission status if API is available
-    if (navigator.permissions && navigator.permissions.query) {
-      navigator.permissions.query({ name: 'geolocation' }).then((result) => {
-        if (result.state === 'granted') {
-          setLocationPermissionStatus('granted');
-          requestLocationPermission();
-        } else if (result.state === 'denied') {
-          setLocationPermissionStatus('denied');
-          setGpsError('Location access is blocked in browser settings. Please allow location to check in.');
-        } else {
-          setLocationPermissionStatus('prompt');
-        }
+    // Trigger instant auto-detection on mount
+    requestLocationPermission();
 
-        result.onchange = () => {
+    // Check browser permission status if Permissions API is supported
+    if (typeof navigator !== 'undefined' && navigator.permissions && typeof navigator.permissions.query === 'function') {
+      try {
+        navigator.permissions.query({ name: 'geolocation' }).then((result) => {
           if (result.state === 'granted') {
             setLocationPermissionStatus('granted');
-            requestLocationPermission();
           } else if (result.state === 'denied') {
             setLocationPermissionStatus('denied');
-            setGpsError('Location access was denied in browser settings.');
+            setGpsError('Location access is blocked in browser settings. Please allow location to check in.');
           } else {
             setLocationPermissionStatus('prompt');
           }
-        };
-      }).catch(() => {
-        setLocationPermissionStatus('prompt');
-      });
-    } else {
-      setLocationPermissionStatus('prompt');
+
+          result.onchange = () => {
+            if (result.state === 'granted') {
+              setLocationPermissionStatus('granted');
+              requestLocationPermission();
+            } else if (result.state === 'denied') {
+              setLocationPermissionStatus('denied');
+              setGpsError('Location access was denied in browser settings.');
+            } else {
+              setLocationPermissionStatus('prompt');
+            }
+          };
+        }).catch(() => {
+          // iOS Safari safe fallback
+        });
+      } catch (e) {
+        // Safe fallback
+      }
     }
 
-    // Continuous watch position for real-time movement tracking
-    const watchId = navigator.geolocation.watchPosition(
+    // Continuous watch position for real-time location & geofence tracking
+    let watchId = navigator.geolocation.watchPosition(
       (pos) => {
         setCurrentCoords({
           latitude: pos.coords.latitude,
@@ -520,9 +545,32 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       (err) => {
         if (err.code === err.PERMISSION_DENIED) {
           setLocationPermissionStatus('denied');
+        } else {
+          // Retry watchPosition with standard accuracy if high-accuracy watch fails indoors
+          try {
+            navigator.geolocation.clearWatch(watchId);
+            watchId = navigator.geolocation.watchPosition(
+              (pos) => {
+                setCurrentCoords({
+                  latitude: pos.coords.latitude,
+                  longitude: pos.coords.longitude,
+                  accuracy: pos.coords.accuracy || 20,
+                  timestamp: pos.timestamp,
+                });
+                setIsUsingRealGPS(true);
+                setHasAcquiredRealGPS(true);
+                setLocationPermissionStatus('granted');
+                setGpsError(null);
+              },
+              undefined,
+              { enableHighAccuracy: false, timeout: 20000, maximumAge: 10000 }
+            );
+          } catch (e) {
+            // Ignore
+          }
         }
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
     );
 
     return () => {
@@ -1834,32 +1882,33 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   };
 
-  const pendingManagerLeaves = leaveRequests.filter((req) => {
-    if (req.status !== 'pending') return false;
+  const pendingManagerLeaves = (leaveRequests || []).filter((req) => {
+    if (!req || req.status !== 'pending') return false;
     if (req.approvalRequired === 'hr_only') return false;
     return req.currentStage === 'pending_manager' || (!req.currentStage && req.approvalRequired !== 'hr_only');
   });
 
-  const pendingHRLeaves = leaveRequests.filter((req) => {
-    if (req.status !== 'pending') return false;
+  const pendingHRLeaves = (leaveRequests || []).filter((req) => {
+    if (!req || req.status !== 'pending') return false;
     if (req.approvalRequired === 'hr_only') return true;
     return req.currentStage === 'pending_hr';
   });
 
   const isCurrentHR =
-    currentEmployee.role === 'hr' ||
-    currentEmployee.role === 'admin' ||
-    (currentEmployee.department && currentEmployee.department.toLowerCase().includes('hr')) ||
-    (currentEmployee.department && currentEmployee.department.toLowerCase().includes('human resources'));
+    currentEmployee?.role === 'hr' ||
+    currentEmployee?.role === 'admin' ||
+    (currentEmployee?.department && currentEmployee.department.toLowerCase().includes('hr')) ||
+    (currentEmployee?.department && currentEmployee.department.toLowerCase().includes('human resources'));
 
-  const myNotifications = notifications.filter(
+  const myNotifications = (notifications || []).filter(
     (n) =>
-      n.recipientEmployeeId === currentEmployee.id ||
-      (n.recipientEmployeeId === 'all_hr' && (currentEmployee.role === 'hr' || currentEmployee.role === 'admin' || isCurrentHR)) ||
-      (n.recipientEmployeeId === 'all_managers' && (currentEmployee.role === 'manager' || currentEmployee.role === 'admin'))
+      n &&
+      (n.recipientEmployeeId === currentEmployee?.id ||
+      (n.recipientEmployeeId === 'all_hr' && (currentEmployee?.role === 'hr' || currentEmployee?.role === 'admin' || isCurrentHR)) ||
+      (n.recipientEmployeeId === 'all_managers' && (currentEmployee?.role === 'manager' || currentEmployee?.role === 'admin')))
   );
 
-  const unreadNotificationCount = myNotifications.filter((n) => !n.isRead).length;
+  const unreadNotificationCount = (myNotifications || []).filter((n) => n && !n.isRead).length;
 
   // HR Employee Management with Firestore Persistence
   const addEmployee = (empData: Omit<Employee, 'id'>): Employee => {
@@ -2108,6 +2157,24 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const updated = { ...emp, allowedLocationIds };
     setEmployees((prev) => prev.map((e) => (e.id === employeeId ? updated : e)));
     firestoreService.saveEmployee(updated).catch(console.error);
+  };
+
+  const updateEmployeeShift = (employeeIds: string[], shiftTimingId: string | null, workScheduleId?: string) => {
+    const targetScheduleId = workScheduleId || workSchedule.id;
+    setEmployees((prev) =>
+      prev.map((emp) => {
+        if (employeeIds.includes(emp.id)) {
+          const updated: Employee = {
+            ...emp,
+            workScheduleId: targetScheduleId,
+            shiftTimingId: shiftTimingId || undefined,
+          };
+          firestoreService.saveEmployee(updated).catch(console.error);
+          return updated;
+        }
+        return emp;
+      })
+    );
   };
 
   const addOfficeLocation = (locData: Omit<OfficeLocation, 'id'>, assignToAll: boolean = true) => {
@@ -2591,6 +2658,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         refillEmployeeLeavesForAnniversary,
         runAnniversaryLeaveRefills,
         updateEmployeeLocations,
+        updateEmployeeShift,
         addOfficeLocation,
         updateOfficeLocation,
         deleteOfficeLocation,

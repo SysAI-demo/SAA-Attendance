@@ -292,17 +292,17 @@ export const OfficeLocationsView: React.FC = () => {
         <div className="flex items-center justify-between">
           <h2 className="text-base font-bold text-stone-900 flex items-center gap-2">
             <span>Configured Office Locations</span>
-            <span className="text-xs font-normal text-stone-500 font-mono">({officeLocations.length})</span>
+            <span className="text-xs font-normal text-stone-500 font-mono">({(officeLocations || []).length})</span>
           </h2>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {officeLocations.map((loc) => {
-            const assignedStaff = employees.filter(
-              (e) => !e.allowedLocationIds || e.allowedLocationIds.length === 0 || e.allowedLocationIds.includes(loc.id) || e.allowedLocationIds.includes('*')
+          {(officeLocations || []).map((loc) => {
+            const assignedStaff = (employees || []).filter(
+              (e) => !e || !e.allowedLocationIds || e.allowedLocationIds.length === 0 || e.allowedLocationIds.includes(loc.id) || e.allowedLocationIds.includes('*')
             );
-            const attendeesNow = todayAttendance.filter(
-              (a) => a.officeLocationId === loc.id && (!a.checkOutTime || a.status === 'active')
+            const attendeesNow = (todayAttendance || []).filter(
+              (a) => a && a.officeLocationId === loc.id && (!a.checkOutTime || a.status === 'active')
             );
 
             // Calculate distance to this specific office

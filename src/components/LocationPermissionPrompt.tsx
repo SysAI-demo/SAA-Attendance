@@ -199,12 +199,14 @@ export const LocationPermissionPrompt: React.FC<LocationPermissionPromptProps> =
             </button>
 
             {/* Quick Preset Teleport for Testing / Desktop */}
-            {officeLocations.length > 0 && (
+            {officeLocations && officeLocations.length > 0 && (
               <button
                 type="button"
                 onClick={() => {
-                  const target = officeLocations[0];
-                  setManualLocation(target.latitude, target.longitude, 5);
+                  const target = officeLocations?.[0];
+                  if (target) {
+                    setManualLocation(target.latitude, target.longitude, 5);
+                  }
                 }}
                 className="px-3 py-2.5 bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors cursor-pointer shrink-0"
                 title="Set location to primary office for testing"

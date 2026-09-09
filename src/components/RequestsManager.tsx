@@ -72,6 +72,12 @@ export const RequestsManager: React.FC = () => {
     'apply_leave' | 'apply_permission' | 'my_requests' | 'manager_approvals'
   >(isManager ? 'manager_approvals' : 'apply_leave');
 
+  useEffect(() => {
+    if (!isManager && activeTab === 'manager_approvals') {
+      setActiveTab('apply_leave');
+    }
+  }, [isManager, activeTab]);
+
   // Approvals Subtab: manager_queue, hr_queue, perms
   const [approvalSubTab, setApprovalSubTab] = useState<'manager_queue' | 'hr_queue' | 'permissions'>('manager_queue');
 
@@ -133,16 +139,18 @@ export const RequestsManager: React.FC = () => {
       });
 
       if (!isCurrentlyAllowed) {
-        const firstDef = allowedLeaveDefs[0];
-        if (firstDef.code === 'CL') setLeaveType('casual');
-        else if (firstDef.code === 'SL') setLeaveType('sick');
-        else if (firstDef.code === 'AL') setLeaveType('annual');
-        else if (firstDef.code === 'ML') setLeaveType('maternity');
-        else if (firstDef.code === 'PL') setLeaveType('paternity');
-        else if (firstDef.code === 'BL') setLeaveType('bereavement');
-        else if (firstDef.code === 'UL' || firstDef.code === 'LOP') setLeaveType('unpaid');
-        else if (firstDef.code === 'EL' || firstDef.code === 'EML') setLeaveType('emergency');
-        else setLeaveType('casual');
+        const firstDef = (allowedLeaveDefs || [])[0];
+        if (firstDef) {
+          if (firstDef.code === 'CL') setLeaveType('casual');
+          else if (firstDef.code === 'SL') setLeaveType('sick');
+          else if (firstDef.code === 'AL') setLeaveType('annual');
+          else if (firstDef.code === 'ML') setLeaveType('maternity');
+          else if (firstDef.code === 'PL') setLeaveType('paternity');
+          else if (firstDef.code === 'BL') setLeaveType('bereavement');
+          else if (firstDef.code === 'UL' || firstDef.code === 'LOP') setLeaveType('unpaid');
+          else if (firstDef.code === 'EL' || firstDef.code === 'EML') setLeaveType('emergency');
+          else setLeaveType('casual');
+        }
       }
     }
   }, [currentEmployee.id, currentEmployee.gradeId, employeeGrade?.allowedLeaveCodes, allowedLeaveDefs.length]);
@@ -372,12 +380,12 @@ export const RequestsManager: React.FC = () => {
   };
 
   // Filtered lists
-  const myLeaves = leaveRequests.filter((r) => r.employeeId === currentEmployee.id);
-  const myPerms = permissionRequests.filter((r) => r.employeeId === currentEmployee.id);
+  const myLeaves = (leaveRequests || []).filter((r) => r && r.employeeId === currentEmployee?.id);
+  const myPerms = (permissionRequests || []).filter((r) => r && r.employeeId === currentEmployee?.id);
 
-  const pendingManagerCount = pendingManagerLeaves.length;
-  const pendingHRCount = pendingHRLeaves.length;
-  const pendingPermsAll = permissionRequests.filter((r) => r.status === 'pending');
+  const pendingManagerCount = (pendingManagerLeaves || []).length;
+  const pendingHRCount = (pendingHRLeaves || []).length;
+  const pendingPermsAll = (permissionRequests || []).filter((r) => r && r.status === 'pending');
   const pendingTotalCount = pendingManagerCount + pendingHRCount + pendingPermsAll.length;
 
   // Leave balance badge lookup
@@ -441,124 +449,69 @@ export const RequestsManager: React.FC = () => {
       )}
 
       {/* Header and Tab Selector */}
-      <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl p-4 sm:p-6 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ded4c5] pb-4 mb-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-bold text-stone-900 flex items-center gap-2">
-              <FileText className="w-6 h-6 text-stone-800" />
-              <span>Requests & Approvals</span>
-            </h1>
-            <p className="text-xs sm:text-sm text-stone-600 mt-0.5">
-              Submit leave with 2-stage (Manager &rarr; HR) workflow approval, upload documents, and track sign-off notifications.
-            </p>
-          </div>
+      <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl p-3 sm:p-4 shadow-xs flex flex-wrap items-center justify-center gap-2.5 sm:gap-3">
+        {/* Bubble 1: Leave Request */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('apply_leave')}
+          className={`px-5 py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'apply_leave'
+              ? 'bg-stone-900 text-stone-50 shadow-md scale-[1.02] border border-stone-900'
+              : 'bg-white text-stone-800 hover:bg-[#ede4d6] border border-[#ded4c5]'
+          }`}
+        >
+          <Calendar className={`w-4 h-4 shrink-0 ${activeTab === 'apply_leave' ? 'text-amber-300' : 'text-amber-900'}`} />
+          <span>Leave Request</span>
+        </button>
 
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Notification Bell Button */}
-            <button
-              type="button"
-              onClick={() => setShowNotificationsModal(true)}
-              className="relative p-2.5 bg-white border border-[#ded4c5] hover:bg-[#ede4d6] rounded-xl text-stone-700 transition-colors cursor-pointer flex items-center gap-2 text-xs font-semibold shadow-2xs"
-              title="View approval notifications"
-            >
-              <Bell className="w-4 h-4 text-stone-800" />
-              <span className="hidden sm:inline">Notifications</span>
-              {unreadNotificationCount > 0 && (
-                <span className="bg-rose-500 text-white font-bold px-1.5 py-0.2 rounded-full text-[10px] animate-pulse">
-                  {unreadNotificationCount}
-                </span>
-              )}
-            </button>
+        {/* Bubble 2: Permission Request */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('apply_permission')}
+          className={`px-5 py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'apply_permission'
+              ? 'bg-stone-900 text-stone-50 shadow-md scale-[1.02] border border-stone-900'
+              : 'bg-white text-stone-800 hover:bg-[#ede4d6] border border-[#ded4c5]'
+          }`}
+        >
+          <Clock className={`w-4 h-4 shrink-0 ${activeTab === 'apply_permission' ? 'text-amber-300' : 'text-amber-900'}`} />
+          <span>Permission Request</span>
+        </button>
 
-            {/* Quick Leave Balance Pill & Anniversary Refill */}
-            {(() => {
-              const cycle = calculateLeaveCycle(currentEmployee.joinedDate);
-              return (
-                <div className="flex flex-col items-end gap-1">
-                  <div className="flex items-center gap-2 bg-[#ede4d6] border border-[#ded4c5] p-2 rounded-xl text-xs">
-                    <div className="text-center px-2.5 border-r border-[#ded4c5]">
-                      <span className="text-[10px] text-stone-500 block">Casual</span>
-                      <span className="font-bold text-stone-900">{currentEmployee.leaveBalance?.casual ?? 0}d</span>
-                    </div>
-                    <div className="text-center px-2.5 border-r border-[#ded4c5]">
-                      <span className="text-[10px] text-stone-500 block">Sick</span>
-                      <span className="font-bold text-stone-900">{currentEmployee.leaveBalance?.sick ?? 0}d</span>
-                    </div>
-                    <div className="text-center px-2.5">
-                      <span className="text-[10px] text-stone-500 block">Annual</span>
-                      <span className="font-bold text-stone-900">{currentEmployee.leaveBalance?.annual ?? 0}d</span>
-                    </div>
-                  </div>
-                  <div className="text-[10px] text-stone-500 font-medium flex items-center gap-1">
-                    <Calendar className="w-3 h-3 text-amber-700" />
-                    <span>Annual refill: <strong>{cycle.nextAnniversaryDate}</strong> (Joined {currentEmployee.joinedDate})</span>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
+        {/* Bubble 3: Request History */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('my_requests')}
+          className={`px-5 py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'my_requests'
+              ? 'bg-stone-900 text-stone-50 shadow-md scale-[1.02] border border-stone-900'
+              : 'bg-white text-stone-800 hover:bg-[#ede4d6] border border-[#ded4c5]'
+          }`}
+        >
+          <FileText className={`w-4 h-4 shrink-0 ${activeTab === 'my_requests' ? 'text-amber-300' : 'text-amber-900'}`} />
+          <span>Request History</span>
+        </button>
 
-        {/* Tab Navigation */}
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => setActiveTab('apply_leave')}
-            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-              activeTab === 'apply_leave'
-                ? 'bg-stone-900 text-stone-50 shadow-xs'
-                : 'bg-white text-stone-700 hover:bg-[#ede4d6] border border-[#ded4c5]'
-            }`}
-          >
-            <Calendar className="w-4 h-4" />
-            <span>Apply for Leave</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('apply_permission')}
-            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-              activeTab === 'apply_permission'
-                ? 'bg-stone-900 text-stone-50 shadow-xs'
-                : 'bg-white text-stone-700 hover:bg-[#ede4d6] border border-[#ded4c5]'
-            }`}
-          >
-            <Clock className="w-4 h-4" />
-            <span>Permission Request</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('my_requests')}
-            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
-              activeTab === 'my_requests'
-                ? 'bg-stone-900 text-stone-50 shadow-xs'
-                : 'bg-white text-stone-700 hover:bg-[#ede4d6] border border-[#ded4c5]'
-            }`}
-          >
-            <FileText className="w-4 h-4" />
-            <span>My Submitted Requests ({myLeaves.length + myPerms.length})</span>
-          </button>
-
-          {/* Approvals Desk Tab */}
+        {/* Bubble 4 (Manager / HR only): Pending Requests */}
+        {isManager && (
           <button
             type="button"
             onClick={() => setActiveTab('manager_approvals')}
-            className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`px-5 py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
               activeTab === 'manager_approvals'
-                ? 'bg-amber-900 text-amber-50 shadow-xs'
-                : 'bg-amber-50 text-amber-900 hover:bg-amber-100 border border-amber-300'
+                ? 'bg-amber-950 text-amber-50 shadow-md scale-[1.02] border border-amber-950'
+                : 'bg-amber-50 text-amber-950 hover:bg-amber-100 border border-amber-300'
             }`}
           >
-            <UserCheck className="w-4 h-4 text-amber-700" />
-            <span>Approvals Desk</span>
+            <UserCheck className={`w-4 h-4 shrink-0 ${activeTab === 'manager_approvals' ? 'text-amber-300' : 'text-amber-900'}`} />
+            <span>Pending Requests</span>
             {pendingTotalCount > 0 && (
-              <span className="bg-amber-500 text-stone-950 font-bold px-1.5 py-0.5 rounded-full text-[10px] ml-1">
+              <span className="bg-amber-500 text-stone-950 font-extrabold px-2 py-0.5 rounded-full text-[10px] ml-0.5">
                 {pendingTotalCount}
               </span>
             )}
           </button>
-        </div>
+        )}
       </div>
 
       {/* ============================================================ */}
@@ -1953,7 +1906,7 @@ export const RequestsManager: React.FC = () => {
                     Notifications Center
                   </h3>
                   <p className="text-[11px] text-stone-500">
-                    {myNotifications.length} updates for {currentEmployee.name}
+                    {(myNotifications || []).length} updates for {currentEmployee?.name}
                   </p>
                 </div>
               </div>
@@ -1980,7 +1933,7 @@ export const RequestsManager: React.FC = () => {
 
             {/* Notification items list */}
             <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-              {myNotifications.length === 0 ? (
+              {(myNotifications || []).length === 0 ? (
                 <div className="text-center py-10 text-stone-500 text-xs">
                   <Bell className="w-8 h-8 mx-auto text-stone-400 mb-2 opacity-60" />
                   <p className="font-semibold">No notifications yet</p>

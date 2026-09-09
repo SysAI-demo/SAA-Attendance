@@ -177,12 +177,12 @@ export const AttendanceView: React.FC = () => {
       // 6. Search Query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
-        const matchesName = rec.employeeName.toLowerCase().includes(q);
-        const matchesCode = rec.employeeCode.toLowerCase().includes(q);
-        const matchesDept = rec.department.toLowerCase().includes(q);
-        const matchesLocation = rec.officeLocationName.toLowerCase().includes(q);
-        const matchesDate = rec.date.includes(q);
-        const matchesNotes = rec.notes?.toLowerCase().includes(q);
+        const matchesName = (rec.employeeName || '').toLowerCase().includes(q);
+        const matchesCode = (rec.employeeCode || '').toLowerCase().includes(q);
+        const matchesDept = (rec.department || '').toLowerCase().includes(q);
+        const matchesLocation = (rec.officeLocationName || '').toLowerCase().includes(q);
+        const matchesDate = (rec.date || '').includes(q);
+        const matchesNotes = (rec.notes || '').toLowerCase().includes(q);
 
         if (!matchesName && !matchesCode && !matchesDept && !matchesLocation && !matchesDate && !matchesNotes) {
           return false;
@@ -938,7 +938,7 @@ export const AttendanceView: React.FC = () => {
       )}
 
       {/* KPI Cards Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-white border border-[#ded4c5] rounded-xl p-3.5 shadow-2xs">
           <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide block">
             Total Logs
@@ -963,28 +963,6 @@ export const AttendanceView: React.FC = () => {
 
         <div className="bg-white border border-[#ded4c5] rounded-xl p-3.5 shadow-2xs">
           <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide block">
-            On-Duty Now
-          </span>
-          <div className="text-2xl font-extrabold text-blue-700 font-mono mt-1">
-            {kpiStats.activeToday}
-          </div>
-          <span className="text-[10px] text-blue-800 font-semibold mt-0.5 block">
-            Active in progress
-          </span>
-        </div>
-
-        <div className="bg-white border border-[#ded4c5] rounded-xl p-3.5 shadow-2xs">
-          <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide block">
-            On-Time Rate
-          </span>
-          <div className="text-2xl font-extrabold text-emerald-700 font-mono mt-1">
-            {kpiStats.onTimeRate}%
-          </div>
-          <span className="text-[10px] text-stone-500 mt-0.5 block">Standard arrival</span>
-        </div>
-
-        <div className="bg-white border border-[#ded4c5] rounded-xl p-3.5 shadow-2xs">
-          <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide block">
             Late Entries
           </span>
           <div className="text-2xl font-extrabold text-amber-700 font-mono mt-1">
@@ -993,16 +971,6 @@ export const AttendanceView: React.FC = () => {
           <span className="text-[10px] text-amber-800 font-semibold mt-0.5 block">
             &gt; 15m past start
           </span>
-        </div>
-
-        <div className="bg-white border border-[#ded4c5] rounded-xl p-3.5 shadow-2xs">
-          <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide block">
-            Geofence Valid
-          </span>
-          <div className="text-2xl font-extrabold text-emerald-700 font-mono mt-1">
-            {kpiStats.geofenceCompliance}%
-          </div>
-          <span className="text-[10px] text-stone-500 mt-0.5 block">Perimeter verified</span>
         </div>
       </div>
 
@@ -1321,11 +1289,13 @@ export const AttendanceView: React.FC = () => {
                         <td className="py-3.5 px-4">
                           <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 rounded-full bg-stone-200 border border-stone-300 flex items-center justify-center font-bold text-stone-800 text-[11px] shrink-0">
-                              {record.employeeName
+                              {(record.employeeName || 'Staff')
                                 .split(' ')
-                                .map((n) => n[0])
+                                .filter(Boolean)
+                                .map((n) => (n && n[0]) || '')
                                 .join('')
-                                .slice(0, 2)}
+                                .slice(0, 2)
+                                .toUpperCase()}
                             </div>
                             <div>
                               <div className="font-bold text-stone-900">{record.employeeName}</div>

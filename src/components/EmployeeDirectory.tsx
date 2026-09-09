@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAttendance } from '../context/AttendanceContext';
-import { Employee, UserRole } from '../types';
+import { Employee, UserRole, ShiftTiming } from '../types';
 import {
   calculateLeaveCycle,
   getEmployeeAnnualQuota,
@@ -33,6 +33,8 @@ import {
   ChevronRight,
   Filter,
   Upload,
+  Clock,
+  X,
   Image as ImageIcon,
   Key,
   AtSign,
@@ -79,7 +81,19 @@ export const EmployeeDirectory: React.FC = () => {
     toggleEmployeeLoginAccess,
     resetEmployeeDeviceBinding,
     terminateEmployeeMobileSession,
+    workSchedule,
+    updateEmployeeShift,
   } = useAttendance();
+
+  // Helper to find assigned shift object for an employee
+  const getAssignedShift = (emp: Employee): ShiftTiming | undefined => {
+    if (!emp || !workSchedule?.shifts) return undefined;
+    if (emp.shiftTimingId) {
+      const found = workSchedule.shifts.find((s) => s.id === emp.shiftTimingId);
+      if (found) return found;
+    }
+    return workSchedule.shifts.find((s) => s.id === workSchedule?.defaultShiftId) || workSchedule.shifts[0];
+  };
 
   // HR Toggle System Login Access for an Employee
   const handleToggleLoginAccess = (emp: Employee, e?: React.MouseEvent) => {
@@ -134,10 +148,24 @@ export const EmployeeDirectory: React.FC = () => {
   // Modals State (HR)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const [locationAssignModalEmp, setLocationAssignModalEmp] = useState<Employee | null>(null);
   const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
   const [deleteConfirmEmpId, setDeleteConfirmEmpId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Bulk Employee Action State
+  const [selectedEmpIds, setSelectedEmpIds] = useState<string[]>([]);
+  const [isBulkShiftModalOpen, setIsBulkShiftModalOpen] = useState(false);
+  const [bulkSelectedShiftId, setBulkSelectedShiftId] = useState<string>('');
+
+  const handleToggleSelectEmp = (empId: string) => {
+    if (selectedEmpIds.includes(empId)) {
+      setSelectedEmpIds(selectedEmpIds.filter((id) => id !== empId));
+    } else {
+      setSelectedEmpIds([...selectedEmpIds, empId]);
+    }
+  };
 
   // Form password visibility & image upload state
   const [showPassword, setShowPassword] = useState(false);
@@ -159,6 +187,7 @@ export const EmployeeDirectory: React.FC = () => {
     department: 'Engineering',
     designation: '',
     gradeId: 'gr_e1',
+    shiftTimingId: 'shift_general',
     phone: '+1 (415) 555-0100',
     joinedDate: new Date().toISOString().split('T')[0],
     managerId: 'emp_02',
@@ -181,16 +210,17 @@ export const EmployeeDirectory: React.FC = () => {
   // Filtered employees for HR Directory
   const departments = ['all', ...Array.from(new Set(employees.map((e) => e.department)))];
 
-  const filteredEmployees = employees.filter((emp) => {
+  const filteredEmployees = (employees || []).filter((emp) => {
+    if (!emp) return false;
     const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
       !q ||
-      emp.name.toLowerCase().includes(q) ||
-      emp.employeeCode.toLowerCase().includes(q) ||
+      (emp.name && emp.name.toLowerCase().includes(q)) ||
+      (emp.employeeCode && emp.employeeCode.toLowerCase().includes(q)) ||
       (emp.username && emp.username.toLowerCase().includes(q)) ||
-      emp.email.toLowerCase().includes(q) ||
-      emp.department.toLowerCase().includes(q) ||
-      emp.designation.toLowerCase().includes(q);
+      (emp.email && emp.email.toLowerCase().includes(q)) ||
+      (emp.department && emp.department.toLowerCase().includes(q)) ||
+      (emp.designation && emp.designation.toLowerCase().includes(q));
 
     const matchesDept = departmentFilter === 'all' || emp.department === departmentFilter;
     const matchesRole = roleFilter === 'all' || emp.role === roleFilter;
@@ -275,6 +305,7 @@ export const EmployeeDirectory: React.FC = () => {
   const handleOpenAddModal = () => {
     const nextCodeNum = 1000 + employees.length + 1;
     const defaultGrade = gradeDefinitions.find((g) => g.isActive)?.id || gradeDefinitions[0]?.id || 'gr_e1';
+    const defaultShift = workSchedule.defaultShiftId || workSchedule.shifts[0]?.id || 'shift_general';
     setAvatarUploadError(null);
     setShowPassword(false);
     setFormData({
@@ -290,6 +321,7 @@ export const EmployeeDirectory: React.FC = () => {
       department: 'Engineering',
       designation: '',
       gradeId: defaultGrade,
+      shiftTimingId: defaultShift,
       phone: '+1 (415) 555-0' + Math.floor(100 + Math.random() * 899),
       joinedDate: new Date().toISOString().split('T')[0],
       managerId: userManager ? userManager.id : 'emp_02',
@@ -326,6 +358,8 @@ export const EmployeeDirectory: React.FC = () => {
       department: formData.department,
       designation: formData.designation.trim(),
       gradeId: formData.gradeId,
+      workScheduleId: workSchedule.id,
+      shiftTimingId: formData.shiftTimingId,
       phone: formData.phone,
       joinedDate: formData.joinedDate,
       allowedLocationIds: (formData.allowedLocationIds || []).length > 0 ? formData.allowedLocationIds : ['loc_hq'],
@@ -348,6 +382,7 @@ export const EmployeeDirectory: React.FC = () => {
     setEditingEmployee(emp);
     setAvatarUploadError(null);
     setShowPassword(false);
+    const defaultShift = emp.shiftTimingId || workSchedule.defaultShiftId || workSchedule.shifts[0]?.id || 'shift_general';
     setFormData({
       name: emp.name,
       email: emp.email,
@@ -361,6 +396,7 @@ export const EmployeeDirectory: React.FC = () => {
       department: emp.department,
       designation: emp.designation,
       gradeId: emp.gradeId || gradeDefinitions[0]?.id || 'gr_e1',
+      shiftTimingId: defaultShift,
       phone: emp.phone,
       joinedDate: emp.joinedDate,
       managerId: emp.managerId || 'emp_02',
@@ -390,6 +426,8 @@ export const EmployeeDirectory: React.FC = () => {
       department: formData.department,
       designation: formData.designation.trim() || editingEmployee.designation,
       gradeId: formData.gradeId,
+      workScheduleId: workSchedule.id,
+      shiftTimingId: formData.shiftTimingId,
       phone: formData.phone || editingEmployee.phone,
       joinedDate: formData.joinedDate || editingEmployee.joinedDate,
       managerId: formData.managerId,
@@ -1075,6 +1113,31 @@ export const EmployeeDirectory: React.FC = () => {
                     </div>
                   </div>
 
+                  {/* Assigned Work Schedule & Shift Badge */}
+                  {(() => {
+                    const shift = getAssignedShift(emp);
+                    return (
+                      <div className="bg-stone-900 text-stone-50 rounded-xl p-2.5 flex items-center justify-between gap-2 shadow-2xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div
+                            className="w-7 h-7 rounded-lg text-white font-bold text-[10px] flex items-center justify-center shrink-0 shadow-xs"
+                            style={{ backgroundColor: shift?.color || '#0284c7' }}
+                          >
+                            {shift?.code || 'GEN'}
+                          </div>
+                          <div className="min-w-0">
+                            <span className="text-[9px] text-stone-400 font-medium block uppercase tracking-wide">Work Shift</span>
+                            <span className="text-xs font-bold truncate block">{shift?.name || 'General Shift'}</span>
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className="text-xs font-mono font-bold text-amber-400 block">{shift?.startTime} - {shift?.endTime}</span>
+                          <span className="text-[9.5px] text-stone-400">{shift?.netWorkHours}h net</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   {/* Authorized Geofence Offices */}
                   <div className="space-y-1.5">
                     <div className="flex items-center justify-between text-[11px]">
@@ -1106,9 +1169,18 @@ export const EmployeeDirectory: React.FC = () => {
                   </div>
                 </div>
 
-                {/* HR Card Actions (Edit, Status Toggle, Refill Leaves, Delete, Switch) */}
+                {/* HR Card Actions (View, Edit, Delete) */}
                 <div className="pt-2.5 border-t border-[#ded4c5] flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setViewingEmployee(emp)}
+                      className="text-xs bg-white hover:bg-[#ede4d6] border border-[#ded4c5] text-stone-800 px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 font-semibold"
+                    >
+                      <Eye className="w-3 h-3 text-stone-600" />
+                      <span>View</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => handleOpenEditModal(emp)}
@@ -1118,42 +1190,15 @@ export const EmployeeDirectory: React.FC = () => {
                       <span>Edit</span>
                     </button>
 
-                    {/* Manual Leave Refill Action */}
-                    <button
-                      type="button"
-                      onClick={(e) => handleRefillEmployeeLeaves(emp, e)}
-                      className="text-xs bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 px-2 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 font-medium"
-                      title="Refill leave balances to full annual quota based on work anniversary"
-                    >
-                      <RotateCcw className="w-3 h-3 text-amber-700" />
-                      <span>Refill</span>
-                    </button>
-
-                    {/* Quick Active/Inactive Toggle Button */}
-                    {!isCurrentUser && (
-                      <button
-                        type="button"
-                        onClick={(e) => handleToggleEmployeeActive(emp, e)}
-                        className={`text-xs px-2 py-1 rounded-lg border transition-colors cursor-pointer flex items-center gap-1 font-medium ${
-                          isEmpActive
-                            ? 'bg-white hover:bg-rose-50 text-stone-700 hover:text-rose-700 border-[#ded4c5] hover:border-rose-200'
-                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300 font-semibold'
-                        }`}
-                        title={isEmpActive ? 'Click to deactivate employee login' : 'Click to activate employee login'}
-                      >
-                        <Power className={`w-3 h-3 ${isEmpActive ? 'text-stone-500' : 'text-emerald-600'}`} />
-                        <span>{isEmpActive ? 'Disable' : 'Enable'}</span>
-                      </button>
-                    )}
-
                     {!isCurrentUser && (
                       <button
                         type="button"
                         onClick={() => setDeleteConfirmEmpId(emp.id)}
-                        className="p-1 rounded-lg text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
+                        className="text-xs bg-white hover:bg-rose-50 border border-[#ded4c5] hover:border-rose-200 text-rose-700 px-2.5 py-1 rounded-lg transition-colors cursor-pointer flex items-center gap-1 font-semibold"
                         title="Delete Employee"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3 h-3 text-rose-600" />
+                        <span>Delete</span>
                       </button>
                     )}
                   </div>
@@ -1209,29 +1254,56 @@ export const EmployeeDirectory: React.FC = () => {
             <table className="w-full text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-[#ede4d6] border-b border-[#ded4c5] text-[10.5px] font-bold uppercase tracking-wider text-stone-700">
-                  <th className="py-2.5 px-3.5 w-[25%]">Employee</th>
-                  <th className="py-2.5 px-3 w-[25%]">Department</th>
-                  <th className="py-2.5 px-3 w-[15%]">Joining Date</th>
-                  <th className="py-2.5 px-3 w-[20%]">Mobile Device</th>
-                  <th className="py-2.5 px-3.5 text-right w-[15%]">Actions</th>
+                  <th className="py-2.5 px-3.5 w-[30px] text-center">
+                    <input
+                      type="checkbox"
+                      checked={selectedEmpIds.length > 0 && selectedEmpIds.length === filteredEmployees.length}
+                      onChange={() => {
+                        if (selectedEmpIds.length === filteredEmployees.length) {
+                          setSelectedEmpIds([]);
+                        } else {
+                          setSelectedEmpIds(filteredEmployees.map((e) => e.id));
+                        }
+                      }}
+                      className="rounded cursor-pointer"
+                      title="Select all staff"
+                    />
+                  </th>
+                  <th className="py-2.5 px-3.5 w-[24%]">Employee</th>
+                  <th className="py-2.5 px-3 w-[28%]">Department & Shift</th>
+                  <th className="py-2.5 px-3 w-[14%]">Joining Date</th>
+                  <th className="py-2.5 px-3 w-[18%]">Mobile Device</th>
+                  <th className="py-2.5 px-3.5 text-right w-[14%]">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#ded4c5]/70 text-stone-800">
                 {paginatedEmployees.map((emp) => {
                   const isCurrentUser = emp.id === currentEmployee.id;
                   const isEmpActive = emp.isActive !== false;
+                  const isSelected = selectedEmpIds.includes(emp.id);
 
                   return (
                     <tr
                       key={emp.id}
                       className={`transition-colors ${
-                        !isEmpActive
+                        isSelected
+                          ? 'bg-amber-100/60'
+                          : !isEmpActive
                           ? 'bg-rose-50/25 opacity-75'
                           : isCurrentUser
                           ? 'bg-amber-50/60 font-medium'
                           : 'hover:bg-white/70'
                       }`}
                     >
+                      {/* Selection Checkbox */}
+                      <td className="py-2.5 px-3.5 text-center">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelectEmp(emp.id)}
+                          className="rounded cursor-pointer"
+                        />
+                      </td>
                       {/* Employee Info */}
                       <td className="py-2.5 px-3.5">
                         <div className="flex items-center gap-2.5">
@@ -1282,9 +1354,9 @@ export const EmployeeDirectory: React.FC = () => {
                         </div>
                       </td>
 
-                      {/* Department */}
+                      {/* Department & Shift */}
                       <td className="py-2.5 px-3">
-                        <div className="space-y-0.5 leading-tight">
+                        <div className="space-y-1 leading-tight">
                           <p className="font-bold text-stone-900 text-[11.5px] truncate max-w-[180px]" title={emp.department}>
                             {emp.department}
                           </p>
@@ -1304,6 +1376,23 @@ export const EmployeeDirectory: React.FC = () => {
                               );
                             })()}
                           </div>
+
+                          {/* Assigned Shift Badge */}
+                          {(() => {
+                            const shift = getAssignedShift(emp);
+                            return (
+                              <div className="pt-0.5">
+                                <span
+                                  className="inline-flex items-center gap-1 text-[9.5px] font-bold px-1.5 py-0.5 rounded-md text-white shadow-2xs"
+                                  style={{ backgroundColor: shift?.color || '#0284c7' }}
+                                  title={`Shift: ${shift?.name} (${shift?.startTime} - ${shift?.endTime})`}
+                                >
+                                  <Clock className="w-2.5 h-2.5 text-white/90" />
+                                  <span>{shift?.code}: {shift?.startTime}–{shift?.endTime}</span>
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </div>
                       </td>
 
@@ -1363,9 +1452,18 @@ export const EmployeeDirectory: React.FC = () => {
                         </div>
                       </td>
 
-                      {/* Row Actions */}
+                      {/* Row Actions (View, Edit, Delete) */}
                       <td className="py-2.5 px-3.5 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setViewingEmployee(emp)}
+                            className="text-[11px] bg-white hover:bg-[#ede4d6] border border-[#ded4c5] text-stone-800 px-2 py-0.5 rounded-md transition-colors cursor-pointer flex items-center gap-1 font-semibold shadow-2xs"
+                          >
+                            <Eye className="w-2.5 h-2.5 text-stone-600" />
+                            <span>View</span>
+                          </button>
+
                           <button
                             type="button"
                             onClick={() => handleOpenEditModal(emp)}
@@ -1375,42 +1473,15 @@ export const EmployeeDirectory: React.FC = () => {
                             <span>Edit</span>
                           </button>
 
-                          {/* Quick Anniversary Leave Refill Action */}
-                          <button
-                            type="button"
-                            onClick={(e) => handleRefillEmployeeLeaves(emp, e)}
-                            className="text-[11px] bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 px-1.5 py-0.5 rounded-md transition-colors cursor-pointer flex items-center gap-1 font-medium shadow-2xs"
-                            title="Refill leave quota"
-                          >
-                            <RotateCcw className="w-2.5 h-2.5 text-amber-700" />
-                            <span>Refill</span>
-                          </button>
-
-                          {/* Quick Toggle Active Status */}
-                          {!isCurrentUser && (
-                            <button
-                              type="button"
-                              onClick={(e) => handleToggleEmployeeActive(emp, e)}
-                              className={`text-[11px] px-1.5 py-0.5 rounded-md border transition-colors cursor-pointer flex items-center gap-1 shadow-2xs ${
-                                isEmpActive
-                                  ? 'bg-white hover:bg-rose-50 text-stone-600 hover:text-rose-700 border-[#ded4c5]'
-                                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300 font-semibold'
-                              }`}
-                              title={isEmpActive ? 'Disable Employee' : 'Enable Employee'}
-                            >
-                              <Power className={`w-2.5 h-2.5 ${isEmpActive ? 'text-stone-400' : 'text-emerald-600'}`} />
-                              <span>{isEmpActive ? 'Disable' : 'Enable'}</span>
-                            </button>
-                          )}
-
                           {!isCurrentUser && (
                             <button
                               type="button"
                               onClick={() => setDeleteConfirmEmpId(emp.id)}
-                              className="p-1 rounded-md text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors cursor-pointer"
+                              className="text-[11px] bg-white hover:bg-rose-50 border border-[#ded4c5] hover:border-rose-200 text-rose-700 px-2 py-0.5 rounded-md transition-colors cursor-pointer flex items-center gap-1 font-semibold shadow-2xs"
                               title="Delete Employee"
                             >
-                              <Trash2 className="w-3 h-3" />
+                              <Trash2 className="w-2.5 h-2.5 text-rose-600" />
+                              <span>Delete</span>
                             </button>
                           )}
                         </div>
@@ -2369,6 +2440,28 @@ export const EmployeeDirectory: React.FC = () => {
                 </select>
               </div>
 
+              {/* Assigned Work Schedule & Shift */}
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-stone-700 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-stone-600" />
+                    <span>Assigned Work Schedule / Shift *</span>
+                  </span>
+                  <span className="text-[10px] text-stone-500 font-normal">Sets shift timings, work hours & late thresholds</span>
+                </label>
+                <select
+                  value={formData.shiftTimingId}
+                  onChange={(e) => setFormData({ ...formData, shiftTimingId: e.target.value })}
+                  className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer font-medium"
+                >
+                  {workSchedule.shifts.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.code} — {s.name} ({s.startTime} - {s.endTime}, {s.netWorkHours}h) {s.isFlexible ? '[Flexible]' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-xs font-bold text-stone-700">Role & Access Type</label>
@@ -2630,6 +2723,255 @@ export const EmployeeDirectory: React.FC = () => {
                 className="px-4 py-1.5 rounded-xl text-xs font-semibold bg-rose-700 hover:bg-rose-800 text-white shadow-xs cursor-pointer"
               >
                 Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* FLOATING BULK SELECTION ACTION BAR */}
+      {/* ============================================================ */}
+      {selectedEmpIds.length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-stone-900 text-stone-50 border border-stone-800 rounded-2xl px-5 py-3 shadow-2xl flex items-center gap-4 animate-in fade-in slide-in-from-bottom-4">
+          <div className="flex items-center gap-2 border-r border-stone-700 pr-3">
+            <Users className="w-4 h-4 text-amber-400" />
+            <span className="text-xs font-bold">{selectedEmpIds.length} Staff Selected</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setBulkSelectedShiftId(workSchedule.defaultShiftId || workSchedule.shifts[0]?.id || 'shift_general');
+                setIsBulkShiftModalOpen(true);
+              }}
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>Assign Work Schedule / Shift</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSelectedEmpIds([])}
+              className="p-1.5 text-stone-400 hover:text-white rounded-lg hover:bg-stone-800 cursor-pointer"
+              title="Deselect all"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL 5: BULK SHIFT ASSIGNMENT */}
+      {/* ============================================================ */}
+      {isBulkShiftModalOpen && (
+        <div className="fixed inset-0 z-[1000] bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-3xl max-w-md w-full p-5 sm:p-6 space-y-4 shadow-2xl">
+            <div className="flex items-start justify-between border-b border-[#ded4c5] pb-3">
+              <div>
+                <h3 className="font-bold text-stone-900 text-base">Assign Schedule to {selectedEmpIds.length} Staff</h3>
+                <p className="text-xs text-stone-500">Select work schedule shift to assign in bulk</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBulkShiftModalOpen(false)}
+                className="p-1 text-stone-400 hover:text-stone-700 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-stone-700 block">Select Work Shift:</label>
+              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                {workSchedule.shifts.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setBulkSelectedShiftId(s.id)}
+                    className={`w-full p-3 rounded-2xl border text-left flex items-center justify-between transition-colors cursor-pointer ${
+                      bulkSelectedShiftId === s.id
+                        ? 'bg-stone-900 text-stone-50 border-stone-900 shadow-sm'
+                        : 'bg-white text-stone-800 border-[#ded4c5] hover:bg-[#ede4d6]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className="w-8 h-8 rounded-xl text-white font-bold text-xs flex items-center justify-center shrink-0"
+                        style={{ backgroundColor: s.color }}
+                      >
+                        {s.code}
+                      </div>
+                      <div>
+                        <span className="font-bold block text-xs">{s.name}</span>
+                        <span className={`text-[10px] ${bulkSelectedShiftId === s.id ? 'text-stone-300' : 'text-stone-500'}`}>
+                          {s.startTime} - {s.endTime} ({s.netWorkHours}h net)
+                        </span>
+                      </div>
+                    </div>
+                    {bulkSelectedShiftId === s.id && <Check className="w-4 h-4 text-amber-400" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#ded4c5]">
+              <button
+                type="button"
+                onClick={() => setIsBulkShiftModalOpen(false)}
+                className="px-4 py-2 border border-[#ded4c5] rounded-xl text-stone-700 hover:bg-[#ede4d6] font-semibold text-xs cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!bulkSelectedShiftId) return;
+                  updateEmployeeShift(selectedEmpIds, bulkSelectedShiftId, workSchedule?.id || 'sched_main');
+                  const shiftObj = (workSchedule?.shifts || []).find((s) => s.id === bulkSelectedShiftId);
+                  showToast(`Assigned shift "${shiftObj?.name || 'Selected Shift'}" to ${selectedEmpIds.length} employee(s)!`);
+                  setIsBulkShiftModalOpen(false);
+                  setSelectedEmpIds([]);
+                }}
+                className="px-5 py-2 bg-stone-900 hover:bg-stone-800 text-stone-50 rounded-xl font-semibold text-xs cursor-pointer shadow-xs"
+              >
+                Confirm & Assign Shift
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================ */}
+      {/* MODAL: VIEW EMPLOYEE DETAILS */}
+      {/* ============================================================ */}
+      {viewingEmployee && (
+        <div className="fixed inset-0 z-[1000] bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-3xl max-w-2xl w-full p-6 space-y-5 shadow-2xl overflow-y-auto max-h-[90vh]">
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-[#ded4c5] pb-4">
+              <div className="flex items-center gap-3.5">
+                {viewingEmployee.avatar ? (
+                  <img
+                    src={viewingEmployee.avatar}
+                    alt={viewingEmployee.name}
+                    className="w-14 h-14 rounded-2xl object-cover border-2 border-white shadow-sm"
+                  />
+                ) : (
+                  <div className="w-14 h-14 rounded-2xl bg-amber-200 text-amber-900 font-extrabold text-xl flex items-center justify-center border-2 border-white shadow-sm">
+                    {viewingEmployee.name.charAt(0)}
+                  </div>
+                )}
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-extrabold text-stone-900 text-lg">{viewingEmployee.name}</h3>
+                    <span className="text-xs font-mono text-stone-500 bg-white border border-[#ded4c5] px-2 py-0.5 rounded-md">
+                      {viewingEmployee.employeeCode}
+                    </span>
+                  </div>
+                  <p className="text-xs font-bold text-stone-700">{viewingEmployee.designation || 'Staff Member'}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="px-2 py-0.5 bg-stone-900 text-amber-400 font-bold text-[10px] rounded-md uppercase tracking-wider">
+                      {viewingEmployee.department}
+                    </span>
+                    <span className={`px-2 py-0.5 font-bold text-[10px] rounded-md uppercase tracking-wider ${
+                      viewingEmployee.role === 'admin' ? 'bg-purple-100 text-purple-900' :
+                      viewingEmployee.role === 'hr' ? 'bg-amber-100 text-amber-900' :
+                      viewingEmployee.role === 'manager' ? 'bg-blue-100 text-blue-900' : 'bg-stone-200 text-stone-800'
+                    }`}>
+                      {viewingEmployee.role}
+                    </span>
+                    <span className={`px-2 py-0.5 font-bold text-[10px] rounded-md ${
+                      viewingEmployee.canLogin !== false ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                    }`}>
+                      {viewingEmployee.canLogin !== false ? 'Active' : 'Disabled'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setViewingEmployee(null)}
+                className="p-1.5 text-stone-400 hover:text-stone-700 hover:bg-[#ede4d6] rounded-xl transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Details Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+              <div className="p-3.5 bg-white border border-[#ded4c5] rounded-2xl space-y-1">
+                <span className="text-[10px] font-bold uppercase text-stone-500 tracking-wider block">Email Address</span>
+                <p className="text-xs font-extrabold text-stone-900 break-all">{viewingEmployee.email}</p>
+              </div>
+
+              <div className="p-3.5 bg-white border border-[#ded4c5] rounded-2xl space-y-1">
+                <span className="text-[10px] font-bold uppercase text-stone-500 tracking-wider block">Phone Number</span>
+                <p className="text-xs font-extrabold text-stone-900">{viewingEmployee.phone || 'Not provided'}</p>
+              </div>
+
+              <div className="p-3.5 bg-white border border-[#ded4c5] rounded-2xl space-y-1">
+                <span className="text-[10px] font-bold uppercase text-stone-500 tracking-wider block">Date of Joining</span>
+                <p className="text-xs font-extrabold text-stone-900">{viewingEmployee.joinedDate || 'N/A'}</p>
+              </div>
+
+              <div className="p-3.5 bg-white border border-[#ded4c5] rounded-2xl space-y-1">
+                <span className="text-[10px] font-bold uppercase text-stone-500 tracking-wider block">Assigned Shift</span>
+                <p className="text-xs font-extrabold text-stone-900">
+                  {getAssignedShift(viewingEmployee)?.name || 'General Standard Shift'}
+                </p>
+              </div>
+            </div>
+
+            {/* Leave Balances Breakdown */}
+            <div className="bg-white border border-[#ded4c5] rounded-2xl p-4 space-y-2">
+              <span className="text-xs font-extrabold text-stone-900 block">Annual Leave Balances</span>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl">
+                  <span className="text-[10px] font-bold text-amber-900 uppercase block">Casual</span>
+                  <span className="text-base font-extrabold text-amber-950 font-mono">
+                    {viewingEmployee.leaveBalance?.casualRemaining ?? 0} / {viewingEmployee.annualLeaveAllowance?.casual ?? 10}
+                  </span>
+                </div>
+                <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl">
+                  <span className="text-[10px] font-bold text-blue-900 uppercase block">Sick</span>
+                  <span className="text-base font-extrabold text-blue-950 font-mono">
+                    {viewingEmployee.leaveBalance?.sickRemaining ?? 0} / {viewingEmployee.annualLeaveAllowance?.sick ?? 8}
+                  </span>
+                </div>
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
+                  <span className="text-[10px] font-bold text-emerald-900 uppercase block">Annual</span>
+                  <span className="text-base font-extrabold text-emerald-950 font-mono">
+                    {viewingEmployee.leaveBalance?.annualRemaining ?? 0} / {viewingEmployee.annualLeaveAllowance?.annual ?? 15}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-[#ded4c5]">
+              <button
+                type="button"
+                onClick={() => {
+                  const emp = viewingEmployee;
+                  setViewingEmployee(null);
+                  handleOpenEditModal(emp);
+                }}
+                className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+                <span>Edit Employee</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewingEmployee(null)}
+                className="px-4 py-2 bg-white border border-[#ded4c5] hover:bg-[#ede4d6] text-stone-800 font-bold text-xs rounded-xl cursor-pointer transition-colors"
+              >
+                Close
               </button>
             </div>
           </div>

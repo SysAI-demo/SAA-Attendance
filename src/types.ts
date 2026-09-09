@@ -83,6 +83,8 @@ export interface Employee {
   department: string;
   designation: string;
   gradeId?: string; // ID of the GradeDefinition (e.g. 'gr_e1', 'gr_e2', etc.)
+  workScheduleId?: string; // ID of the assigned WorkScheduleDefinition (e.g. 'sched_main')
+  shiftTimingId?: string; // ID of the assigned ShiftTiming (e.g. 'shift_general', 'shift_early', etc.)
   phone: string;
   joinedDate: string; // YYYY-MM-DD (Anniversary Anchor for automatic annual leave refill without carry-over)
   lastLeaveRefillDate?: string; // YYYY-MM-DD of the most recent annual anniversary refill

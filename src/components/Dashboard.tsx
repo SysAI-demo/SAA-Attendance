@@ -53,7 +53,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Format 24h string (HH:mm:ss or HH:mm) into 12h AM/PM
   const format12Hour = (timeStr?: string): { formatted: string; raw: string } => {
-    if (!timeStr) return { formatted: '--:--', raw: '--:--' };
+    if (!timeStr || typeof timeStr !== 'string') return { formatted: '--:--', raw: '--:--' };
     const parts = timeStr.split(':').map(Number);
     const h = parts[0] ?? 0;
     const m = parts[1] ?? 0;
@@ -67,7 +67,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   // Calculate Expected Checkout Time (Check-in + 8 hours)
   const getExpectedCheckout = (checkInTimeStr?: string) => {
-    if (!checkInTimeStr) return null;
+    if (!checkInTimeStr || typeof checkInTimeStr !== 'string') return null;
     const parts = checkInTimeStr.split(':').map(Number);
     const inH = parts[0] ?? 0;
     const inM = parts[1] ?? 0;
@@ -114,9 +114,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
     : null;
 
   // Find Reporting Manager
-  const manager = employees.find((e) => e.id === currentEmployee.managerId) ||
-    (currentEmployee.role !== 'manager'
-      ? employees.find((e) => e.role === 'manager')
+  const manager = (employees || []).find((e) => e.id === currentEmployee?.managerId) ||
+    (currentEmployee?.role !== 'manager'
+      ? (employees || []).find((e) => e.role === 'manager')
       : null);
 
   // Check-in & Check-out formatting
@@ -126,17 +126,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const checkOutFormatted = format12Hour(todayRecord?.checkOutTime);
 
   // Direct reports if current user is manager
-  const directReports = employees.filter((e) => e.managerId === currentEmployee.id);
+  const directReports = (employees || []).filter((e) => e.managerId === currentEmployee?.id);
 
   // Leave Balances calculations
-  const casualBalance = currentEmployee.leaveBalance?.casual ?? 0;
-  const sickBalance = currentEmployee.leaveBalance?.sick ?? 0;
-  const annualBalance = currentEmployee.leaveBalance?.annual ?? 0;
+  const casualBalance = currentEmployee?.leaveBalance?.casual ?? 0;
+  const sickBalance = currentEmployee?.leaveBalance?.sick ?? 0;
+  const annualBalance = currentEmployee?.leaveBalance?.annual ?? 0;
   const totalLeaveBalance = casualBalance + sickBalance + annualBalance;
 
   // Permission Balances calculations
   const monthlyPermissionQuota = 2; // 2 permissions allowed per month
-  const usedPermissionsThisMonth = currentEmployee.leaveBalance?.permissionsCountThisMonth ?? 0;
+  const usedPermissionsThisMonth = currentEmployee?.leaveBalance?.permissionsCountThisMonth ?? 0;
   const remainingPermissionsThisMonth = Math.max(0, monthlyPermissionQuota - usedPermissionsThisMonth);
 
   // Pending requests for this employee
@@ -167,10 +167,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </span>
           </div>
           <h1 className="text-xl sm:text-2xl font-extrabold text-stone-900 tracking-tight">
-            Welcome back, {currentEmployee.name}
+            Welcome back, {currentEmployee?.name || 'Staff'}
           </h1>
           <p className="text-xs sm:text-sm text-stone-600 font-medium">
-            {currentEmployee.designation} • {currentEmployee.department}
+            {currentEmployee?.designation || 'Team Member'} • {currentEmployee?.department || 'General'}
           </p>
         </div>
 

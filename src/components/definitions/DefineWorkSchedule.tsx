@@ -18,6 +18,9 @@ import {
   Moon,
   Coffee,
   Calendar,
+  Users,
+  UserCheck,
+  Layers,
 } from 'lucide-react';
 
 const PRESET_COLORS = [
@@ -46,11 +49,33 @@ export const DefineWorkSchedule: React.FC = () => {
     addShift,
     updateShift,
     deleteShift,
+    employees = [],
+    updateEmployeeShift,
   } = useAttendance();
+
+  const safeWorkSchedule = workSchedule || {
+    id: 'sched_main',
+    name: 'Standard Corporate Schedule',
+    workingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+    saturdayRule: 'alternate_off' as const,
+    shifts: [],
+    defaultShiftId: 'shift_general',
+    weeklyWorkHours: 40,
+  };
+  const workingDays = safeWorkSchedule.workingDays || [];
+  const shifts = safeWorkSchedule.shifts || [];
+  const safeEmployees = employees || [];
 
   const [isAddShiftOpen, setIsAddShiftOpen] = useState(false);
   const [editingShift, setEditingShift] = useState<ShiftTiming | null>(null);
   const [deleteConfirmShiftId, setDeleteConfirmShiftId] = useState<string | null>(null);
+
+  // Group Shift Assignment State
+  const [assignModalShift, setAssignModalShift] = useState<ShiftTiming | null>(null);
+  const [assignScope, setAssignScope] = useState<'all' | 'department' | 'individual'>('department');
+  const [selectedDept, setSelectedDept] = useState<string>('Engineering');
+  const [selectedEmpIdsForShift, setSelectedEmpIdsForShift] = useState<string[]>([]);
+  const [shiftToastMsg, setShiftToastMsg] = useState<string | null>(null);
 
   // Shift form data
   const [shiftFormData, setShiftFormData] = useState<Omit<ShiftTiming, 'id'>>({
@@ -70,7 +95,7 @@ export const DefineWorkSchedule: React.FC = () => {
 
   // Operating Days Toggle
   const handleToggleDay = (day: typeof DAYS_OF_WEEK[number]['id']) => {
-    let updatedDays = [...workSchedule.workingDays];
+    let updatedDays = [...workingDays];
     if (updatedDays.includes(day)) {
       if (updatedDays.length > 1) {
         updatedDays = updatedDays.filter((d) => d !== day);
@@ -80,33 +105,15 @@ export const DefineWorkSchedule: React.FC = () => {
     }
     const weeklyHours = updatedDays.length * 8;
     updateWorkSchedule({
-      ...workSchedule,
+      ...safeWorkSchedule,
       workingDays: updatedDays,
       weeklyWorkHours: weeklyHours,
     });
   };
 
-  // Saturday Policy Update
-  const handleSaturdayRuleChange = (rule: WorkScheduleDefinition['saturdayRule']) => {
-    let updatedDays = [...workSchedule.workingDays];
-    if (rule === 'all_working') {
-      if (!updatedDays.includes('saturday')) updatedDays.push('saturday');
-    } else if (rule === 'all_off') {
-      updatedDays = updatedDays.filter((d) => d !== 'saturday');
-    } else {
-      // Alternate / 1st-3rd: keep in working days definition with rule
-      if (!updatedDays.includes('saturday')) updatedDays.push('saturday');
-    }
-    updateWorkSchedule({
-      ...workSchedule,
-      saturdayRule: rule,
-      workingDays: updatedDays,
-    });
-  };
-
   const handleSetDefaultShift = (shiftId: string) => {
     updateWorkSchedule({
-      ...workSchedule,
+      ...safeWorkSchedule,
       defaultShiftId: shiftId,
     });
   };
@@ -120,7 +127,7 @@ export const DefineWorkSchedule: React.FC = () => {
       breakDurationMinutes: 60,
       netWorkHours: 8.0,
       isFlexible: false,
-      color: PRESET_COLORS[workSchedule.shifts.length % PRESET_COLORS.length] || '#0284c7',
+      color: PRESET_COLORS[shifts.length % PRESET_COLORS.length] || '#0284c7',
       applicableDepartments: ['all'],
       isActive: true,
     });
@@ -205,7 +212,7 @@ export const DefineWorkSchedule: React.FC = () => {
           </div>
           <div>
             <h3 className="font-bold text-stone-900 text-sm sm:text-base">Weekly Operating Days & Policies</h3>
-            <p className="text-xs text-stone-500">Corporate work week definition, Saturday roster rule, and expected weekly hours</p>
+            <p className="text-xs text-stone-500">Corporate work week definition and expected weekly hours</p>
           </div>
         </div>
 
@@ -215,14 +222,14 @@ export const DefineWorkSchedule: React.FC = () => {
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-stone-800">Standard Working Days</label>
               <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg">
-                {workSchedule.workingDays.length} Days Active
+                {workingDays.length} Days Active
               </span>
             </div>
             <p className="text-[11px] text-stone-500">Click day tokens to toggle business days and mandatory weekly offs.</p>
 
             <div className="flex flex-wrap gap-2 pt-1">
               {DAYS_OF_WEEK.map((d) => {
-                const isActive = workSchedule.workingDays.includes(d.id);
+                const isActive = workingDays.includes(d.id);
                 return (
                   <button
                     key={d.id}
@@ -247,41 +254,12 @@ export const DefineWorkSchedule: React.FC = () => {
             <div>
               <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider block">Standard Work Week</span>
               <p className="text-3xl font-black text-stone-900 mt-1">
-                {workSchedule.weeklyWorkHours} <span className="text-sm font-semibold text-stone-500">hrs/week</span>
+                {safeWorkSchedule.weeklyWorkHours} <span className="text-sm font-semibold text-stone-500">hrs/week</span>
               </p>
             </div>
             <p className="text-[11px] text-stone-500">
-              Calculated based on {workSchedule.workingDays.length} working days @ standard 8.0h shift duration.
+              Calculated based on {workingDays.length} working days @ standard 8.0h shift duration.
             </p>
-          </div>
-        </div>
-
-        {/* Saturday Policy Selector */}
-        <div className="bg-white rounded-2xl p-4 border border-[#ded4c5] space-y-2">
-          <label className="text-xs font-bold text-stone-800 block">Saturday Policy Rule</label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-1">
-            {[
-              { id: 'all_off', label: 'All Saturdays Off', desc: 'Strict 5-day corporate week' },
-              { id: 'alternate_off', label: 'Alternate Saturdays Off', desc: '2nd & 4th Saturday Off' },
-              { id: 'first_third_working', label: '1st & 3rd Working', desc: 'Rest Saturdays Off' },
-              { id: 'all_working', label: 'All Saturdays Working', desc: '6-day operational week' },
-            ].map((rule) => (
-              <button
-                key={rule.id}
-                type="button"
-                onClick={() => handleSaturdayRuleChange(rule.id as any)}
-                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
-                  workSchedule.saturdayRule === rule.id
-                    ? 'bg-stone-900 text-white border-stone-900 shadow-xs'
-                    : 'bg-[#f8f5ef] text-stone-800 border-[#ded4c5] hover:bg-[#ede4d6]'
-                }`}
-              >
-                <span className="block font-bold text-xs">{rule.label}</span>
-                <span className={`block text-[10px] mt-0.5 ${workSchedule.saturdayRule === rule.id ? 'text-stone-300' : 'text-stone-500'}`}>
-                  {rule.desc}
-                </span>
-              </button>
-            ))}
           </div>
         </div>
       </div>
@@ -318,8 +296,8 @@ export const DefineWorkSchedule: React.FC = () => {
 
           {/* List Rows */}
           <div className="divide-y divide-[#ded4c5]">
-            {workSchedule.shifts.map((shift) => {
-              const isDefault = workSchedule.defaultShiftId === shift.id;
+            {shifts.map((shift) => {
+              const isDefault = safeWorkSchedule.defaultShiftId === shift.id;
               return (
                 <div
                   key={shift.id}
@@ -387,12 +365,12 @@ export const DefineWorkSchedule: React.FC = () => {
                     {/* Col 4: Applicable Departments */}
                     <div className="col-span-3">
                       <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto">
-                        {shift.applicableDepartments.includes('all') ? (
+                        {(shift.applicableDepartments || []).includes('all') ? (
                           <span className="bg-white border border-[#ded4c5] text-stone-800 text-[10px] font-semibold px-2 py-0.5 rounded-md">
                             All Company Departments
                           </span>
                         ) : (
-                          shift.applicableDepartments.map((dept) => (
+                          (shift.applicableDepartments || []).map((dept) => (
                             <span
                               key={dept}
                               className="bg-white border border-[#ded4c5] text-stone-800 text-[10px] font-medium px-2 py-0.5 rounded-md truncate max-w-[130px]"
@@ -406,7 +384,29 @@ export const DefineWorkSchedule: React.FC = () => {
                     </div>
 
                     {/* Col 5: Status Toggle & Actions */}
-                    <div className="col-span-2 flex items-center justify-end gap-2">
+                    <div className="col-span-2 flex items-center justify-end gap-1.5">
+                      {(() => {
+                        const assignedCount = employees.filter(
+                          (e) => e.shiftTimingId === shift.id || (!e.shiftTimingId && isDefault)
+                        ).length;
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAssignModalShift(shift);
+                              setAssignScope('department');
+                              setSelectedDept('Engineering');
+                              setSelectedEmpIdsForShift([]);
+                            }}
+                            className="px-2 py-1 bg-stone-900 hover:bg-stone-800 text-stone-50 rounded-lg text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                            title="Assign this schedule to individual employee or department group"
+                          >
+                            <Users className="w-3 h-3 text-stone-300" />
+                            <span>Assign ({assignedCount})</span>
+                          </button>
+                        );
+                      })()}
+
                       <button
                         type="button"
                         onClick={() => handleToggleShiftActive(shift)}
@@ -504,12 +504,12 @@ export const DefineWorkSchedule: React.FC = () => {
                     </div>
 
                     <div className="flex flex-wrap gap-1">
-                      {shift.applicableDepartments.includes('all') ? (
+                      {(shift.applicableDepartments || []).includes('all') ? (
                         <span className="bg-white border border-[#ded4c5] text-stone-800 text-[10px] font-semibold px-2 py-0.5 rounded-md">
                           All Departments
                         </span>
                       ) : (
-                        shift.applicableDepartments.map((dept) => (
+                        (shift.applicableDepartments || []).map((dept) => (
                           <span
                             key={dept}
                             className="bg-white border border-[#ded4c5] text-stone-800 text-[10px] font-medium px-2 py-0.5 rounded-md"
@@ -677,7 +677,7 @@ export const DefineWorkSchedule: React.FC = () => {
                 </div>
 
                 <div className="flex flex-wrap gap-1.5 pt-1">
-                  {shiftFormData.applicableDepartments.map((d) => (
+                  {(shiftFormData.applicableDepartments || []).map((d) => (
                     <span
                       key={d}
                       className="bg-[#ede4d6] border border-[#ded4c5] text-stone-800 text-xs px-2.5 py-1 rounded-lg flex items-center gap-1.5"
@@ -789,6 +789,208 @@ export const DefineWorkSchedule: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ASSIGN SHIFT TO INDIVIDUAL / GROUP MODAL */}
+      {assignModalShift && (
+        <div className="fixed inset-0 z-50 bg-stone-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-3xl max-w-lg w-full p-5 sm:p-6 space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between border-b border-[#ded4c5] pb-3">
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-10 h-10 rounded-2xl text-white font-bold text-xs flex items-center justify-center shadow-xs shrink-0"
+                  style={{ backgroundColor: assignModalShift.color }}
+                >
+                  {assignModalShift.code}
+                </div>
+                <div>
+                  <h3 className="font-bold text-stone-900 text-base">
+                    Assign {assignModalShift.name}
+                  </h3>
+                  <p className="text-xs text-stone-500 font-mono">
+                    Timing: {assignModalShift.startTime} - {assignModalShift.endTime} ({assignModalShift.netWorkHours} hours/day)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAssignModalShift(null)}
+                className="p-1 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-[#ede4d6] transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Scope Selector */}
+            <div className="space-y-3">
+              <label className="text-xs font-bold text-stone-700 block">Select Assignment Target Scope:</label>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setAssignScope('department')}
+                  className={`p-2.5 rounded-xl border text-xs font-semibold flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                    assignScope === 'department'
+                      ? 'bg-stone-900 text-stone-50 border-stone-900 shadow-xs'
+                      : 'bg-white text-stone-700 border-[#ded4c5] hover:bg-[#ede4d6]'
+                  }`}
+                >
+                  <Building className="w-4 h-4" />
+                  <span>By Department</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAssignScope('individual')}
+                  className={`p-2.5 rounded-xl border text-xs font-semibold flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                    assignScope === 'individual'
+                      ? 'bg-stone-900 text-stone-50 border-stone-900 shadow-xs'
+                      : 'bg-white text-stone-700 border-[#ded4c5] hover:bg-[#ede4d6]'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  <span>Individual Staff</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAssignScope('all')}
+                  className={`p-2.5 rounded-xl border text-xs font-semibold flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+                    assignScope === 'all'
+                      ? 'bg-stone-900 text-stone-50 border-stone-900 shadow-xs'
+                      : 'bg-white text-stone-700 border-[#ded4c5] hover:bg-[#ede4d6]'
+                  }`}
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>All Company</span>
+                </button>
+              </div>
+
+              {/* Scope Options */}
+              {assignScope === 'department' && (
+                <div className="space-y-2 bg-white p-3.5 border border-[#ded4c5] rounded-2xl">
+                  <label className="text-xs font-bold text-stone-800 block">Select Department Group:</label>
+                  <select
+                    value={selectedDept}
+                    onChange={(e) => setSelectedDept(e.target.value)}
+                    className="w-full bg-[#f8f5ef] border border-[#ded4c5] rounded-xl px-3 py-2 text-xs font-semibold text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer"
+                  >
+                    {Array.from(new Set(employees.map((e) => e.department))).map((dept) => (
+                      <option key={dept} value={dept}>
+                        {dept} ({employees.filter((e) => e.department === dept).length} employees)
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-stone-500">
+                    Assigning this shift will update all staff members in the selected department.
+                  </p>
+                </div>
+              )}
+
+              {assignScope === 'individual' && (
+                <div className="space-y-2 bg-white p-3.5 border border-[#ded4c5] rounded-2xl">
+                  <label className="text-xs font-bold text-stone-800 flex items-center justify-between">
+                    <span>Select Individual Employees:</span>
+                    <span className="text-[10px] text-stone-500">
+                      {selectedEmpIdsForShift.length} selected
+                    </span>
+                  </label>
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                    {employees.map((emp) => {
+                      const isSelected = selectedEmpIdsForShift.includes(emp.id);
+                      const currentShift = workSchedule.shifts.find((s) => s.id === emp.shiftTimingId);
+                      return (
+                        <button
+                          key={emp.id}
+                          type="button"
+                          onClick={() => {
+                            if (isSelected) {
+                              setSelectedEmpIdsForShift(selectedEmpIdsForShift.filter((id) => id !== emp.id));
+                            } else {
+                              setSelectedEmpIdsForShift([...selectedEmpIdsForShift, emp.id]);
+                            }
+                          }}
+                          className={`w-full p-2 rounded-xl text-left border flex items-center justify-between text-xs transition-colors cursor-pointer ${
+                            isSelected
+                              ? 'bg-stone-900 text-stone-50 border-stone-900'
+                              : 'bg-[#f8f5ef] text-stone-800 border-[#ded4c5] hover:bg-[#ede4d6]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => {}}
+                              className="rounded cursor-pointer"
+                            />
+                            <div>
+                              <span className="font-bold block">{emp.name} ({emp.employeeCode})</span>
+                              <span className={`text-[10px] ${isSelected ? 'text-stone-300' : 'text-stone-500'}`}>
+                                {emp.department} • {currentShift ? currentShift.name : 'Default Shift'}
+                              </span>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {assignScope === 'all' && (
+                <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-2xl space-y-1">
+                  <h4 className="font-bold text-amber-950 text-xs">Assign to Entire Company ({employees.length} Staff)</h4>
+                  <p className="text-[11px] text-amber-900">
+                    This action will reassign all active employees across all departments to use <strong>{assignModalShift.name}</strong> as their primary work schedule.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#ded4c5]">
+              <button
+                type="button"
+                onClick={() => setAssignModalShift(null)}
+                className="px-4 py-2 border border-[#ded4c5] rounded-xl text-stone-700 hover:bg-[#ede4d6] font-semibold text-xs cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  let targetIds: string[] = [];
+                  if (assignScope === 'all') {
+                    targetIds = employees.map((e) => e.id);
+                  } else if (assignScope === 'department') {
+                    targetIds = employees.filter((e) => e.department === selectedDept).map((e) => e.id);
+                  } else {
+                    targetIds = selectedEmpIdsForShift;
+                  }
+
+                  if (targetIds.length === 0) {
+                    alert('Please select at least one employee or group.');
+                    return;
+                  }
+
+                  updateEmployeeShift(targetIds, assignModalShift.id, workSchedule.id);
+                  setShiftToastMsg(`Successfully assigned ${assignModalShift.name} to ${targetIds.length} employee(s)!`);
+                  setAssignModalShift(null);
+                  setTimeout(() => setShiftToastMsg(null), 3500);
+                }}
+                className="px-5 py-2 bg-stone-900 hover:bg-stone-800 text-stone-50 rounded-xl font-semibold text-xs cursor-pointer shadow-xs"
+              >
+                Apply Shift Assignment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST NOTIFICATION */}
+      {shiftToastMsg && (
+        <div className="fixed bottom-6 right-6 z-50 bg-stone-900 text-stone-50 border border-stone-800 px-4 py-3 rounded-2xl shadow-xl text-xs font-semibold flex items-center gap-2.5 animate-bounce">
+          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+          <span>{shiftToastMsg}</span>
         </div>
       )}
     </div>

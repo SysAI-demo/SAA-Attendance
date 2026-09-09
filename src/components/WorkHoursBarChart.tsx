@@ -91,19 +91,23 @@ export const WorkHoursBarChart: React.FC<WorkHoursBarChartProps> = ({
       if (record) {
         if (record.totalHoursWorked && record.totalHoursWorked > 0) {
           hours = Number(record.totalHoursWorked);
-        } else if (record.checkInTime && record.checkOutTime) {
-          const [inH, inM] = record.checkInTime.split(':').map(Number);
-          const [outH, outM] = record.checkOutTime.split(':').map(Number);
-          const diffHours = (outH + outM / 60) - (inH + inM / 60);
-          hours = Math.max(0, Math.round(diffHours * 10) / 10);
-        } else if (record.checkInTime && i === 0) {
+        } else if (typeof record.checkInTime === 'string' && typeof record.checkOutTime === 'string') {
+          const inParts = record.checkInTime.split(':').map(Number);
+          const outParts = record.checkOutTime.split(':').map(Number);
+          if (inParts.length >= 2 && outParts.length >= 2 && !isNaN(inParts[0]) && !isNaN(outParts[0])) {
+            const diffHours = (outParts[0] + (outParts[1] || 0) / 60) - (inParts[0] + (inParts[1] || 0) / 60);
+            hours = Math.max(0, Math.round(diffHours * 10) / 10);
+          }
+        } else if (typeof record.checkInTime === 'string' && i === 0) {
           // Today active in progress
-          const [inH, inM] = record.checkInTime.split(':').map(Number);
-          const nowH = today.getHours() + today.getMinutes() / 60;
-          const diffHours = Math.max(0, nowH - (inH + inM / 60));
-          hours = Math.round(diffHours * 10) / 10;
-          status = 'active_today';
-          statusLabel = 'Shift In Progress';
+          const inParts = record.checkInTime.split(':').map(Number);
+          if (inParts.length >= 2 && !isNaN(inParts[0])) {
+            const nowH = today.getHours() + today.getMinutes() / 60;
+            const diffHours = Math.max(0, nowH - (inParts[0] + (inParts[1] || 0) / 60));
+            hours = Math.round(diffHours * 10) / 10;
+            status = 'active_today';
+            statusLabel = 'Shift In Progress';
+          }
         }
 
         if (status !== 'active_today') {
@@ -297,7 +301,7 @@ export const WorkHoursBarChart: React.FC<WorkHoursBarChartProps> = ({
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
           <div className="bg-[#fbf9f5] border border-[#ded4c5] rounded-xl p-3">
             <div className="flex items-center justify-between text-[11px] text-stone-500 mb-1 font-medium">
               <span>Total Logged</span>
@@ -337,19 +341,6 @@ export const WorkHoursBarChart: React.FC<WorkHoursBarChartProps> = ({
               {metrics.complianceRate}% attendance
             </div>
           </div>
-
-          <div className="bg-[#fbf9f5] border border-[#ded4c5] rounded-xl p-3">
-            <div className="flex items-center justify-between text-[11px] text-stone-500 mb-1 font-medium">
-              <span>8h Streak</span>
-              <Flame className="w-3.5 h-3.5 text-amber-500" />
-            </div>
-            <div className="text-lg font-extrabold text-stone-900 font-mono tracking-tight">
-              {metrics.streak} <span className="text-xs font-sans text-stone-500 font-normal">days</span>
-            </div>
-            <div className="text-[10px] text-amber-800 font-semibold mt-0.5">
-              +{metrics.overtimeHours}h Overtime
-            </div>
-          </div>
         </div>
       )}
 
@@ -361,7 +352,7 @@ export const WorkHoursBarChart: React.FC<WorkHoursBarChartProps> = ({
               data={filteredData}
               margin={{ top: 10, right: 4, left: -24, bottom: 0 }}
               onClick={(state: any) => {
-                if (state && state.activePayload && state.activePayload.length > 0) {
+                if (state && state.activePayload && state.activePayload.length > 0 && state.activePayload[0]?.payload) {
                   setSelectedDay(state.activePayload[0].payload as DailyHoursData);
                 }
               }}
@@ -397,7 +388,7 @@ export const WorkHoursBarChart: React.FC<WorkHoursBarChartProps> = ({
               <Tooltip
                 cursor={{ fill: 'rgba(239, 232, 222, 0.45)' }}
                 content={({ active, payload }) => {
-                  if (active && payload && payload.length) {
+                  if (active && payload && payload.length && payload[0]?.payload) {
                     const d = payload[0].payload as DailyHoursData;
                     return (
                       <div className="bg-stone-900 text-stone-100 p-2.5 rounded-xl text-xs shadow-xl border border-stone-700 min-w-44 space-y-1.5 pointer-events-none z-50">

@@ -335,13 +335,13 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
 
   // Compute live geofence verification
   const geofenceResult = useMemo(() => {
-    const allowedIds = currentEmployee.allowedLocationIds || officeLocations.map((l) => l.id);
-    return checkGeofenceStatus(currentCoords, officeLocations, allowedIds);
+    const allowedIds = currentEmployee.allowedLocationIds || (officeLocations || []).map((l) => l.id);
+    return checkGeofenceStatus(currentCoords, officeLocations || [], allowedIds);
   }, [currentCoords, officeLocations, currentEmployee.allowedLocationIds]);
 
   // Automatically detected office based on live GPS position
   const detectedOffice = useMemo(() => {
-    return geofenceResult.activeAuthorizedLocation || geofenceResult.nearestLocation || officeLocations[0];
+    return geofenceResult?.activeAuthorizedLocation || geofenceResult?.nearestLocation || (officeLocations || [])[0];
   }, [geofenceResult, officeLocations]);
 
   // Find employee's assigned grade definition if available
@@ -537,7 +537,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
     return (
       myNotifications.find(
         (n) => !n.isRead && (n.type === 'leave_approved' || n.type === 'permission_approved')
-      ) || recentApprovalNotifications[0]
+      ) || (recentApprovalNotifications || [])[0]
     );
   }, [myNotifications, recentApprovalNotifications]);
 
