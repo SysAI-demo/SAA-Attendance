@@ -19,6 +19,12 @@ import {
 } from 'lucide-react';
 import { GeoCoordinates, GeofenceCheckResult, Employee, AttendanceRecord } from '../types';
 import { formatDistance } from '../utils/geoUtils';
+import {
+  hapticCheckInClick,
+  hapticCheckInSuccess,
+  hapticCheckOutClick,
+  hapticCheckOutSuccess,
+} from '../utils/haptics';
 
 interface PunchConfirmationModalProps {
   isOpen: boolean;
@@ -85,12 +91,22 @@ export const PunchConfirmationModal: React.FC<PunchConfirmationModalProps> = ({
   };
 
   const handleConfirmClick = () => {
+    if (isCheckIn) {
+      hapticCheckInClick();
+    } else {
+      hapticCheckOutClick();
+    }
     setIsSubmitting(true);
     if (onNotesChange) {
       onNotesChange(localNotes);
     }
     setTimeout(() => {
       onConfirm();
+      if (isCheckIn) {
+        hapticCheckInSuccess();
+      } else {
+        hapticCheckOutSuccess();
+      }
       setIsSubmitting(false);
       onClose();
     }, 150);

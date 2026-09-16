@@ -67,7 +67,10 @@ export const WorkHoursBarChart: React.FC<WorkHoursBarChartProps> = ({
     const today = new Date();
 
     // Map existing employee records by date string YYYY-MM-DD
-    const empRecords = attendanceRecords.filter((r) => r.employeeId === employee.id);
+    const empId = employee?.id;
+    const empRecords = Array.isArray(attendanceRecords) && empId
+      ? attendanceRecords.filter((r) => r.employeeId === empId)
+      : [];
     const recordByDate = new Map<string, AttendanceRecord>();
     empRecords.forEach((rec) => {
       recordByDate.set(rec.date, rec);
@@ -143,7 +146,7 @@ export const WorkHoursBarChart: React.FC<WorkHoursBarChartProps> = ({
     }
 
     return data;
-  }, [employee.id, attendanceRecords]);
+  }, [employee?.id, attendanceRecords]);
 
   // Filtered dataset based on selected time range
   const filteredData = useMemo<DailyHoursData[]>(() => {

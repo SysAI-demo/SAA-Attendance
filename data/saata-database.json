@@ -1,51 +1,751 @@
 {
   "version": 2,
-  "lastUpdated": "2026-09-08T07:38:08.199Z",
-  "employees": [],
-  "locations": [],
+  "lastUpdated": "2026-09-16T07:35:28.145Z",
+  "employees": [
+    {
+      "id": "emp_admin_danish",
+      "name": "Danish Khan",
+      "nameAr": "دانش خان",
+      "email": "Danish199506@gmail.com",
+      "username": "admin",
+      "password": "password123",
+      "isActive": true,
+      "canLogin": true,
+      "avatar": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80",
+      "employeeCode": "EMP-001",
+      "role": "admin",
+      "department": "Human Resources",
+      "designation": "HR Director & System Admin",
+      "designationAr": "مدير الموارد البشرية ومدير النظام",
+      "gradeId": "gr_m1",
+      "phone": "+966 50 123 4567",
+      "joinedDate": "2024-01-01",
+      "allowedLocationIds": [
+        "loc_hq"
+      ],
+      "todayStatus": "present",
+      "leaveBalance": {
+        "casual": 12,
+        "sick": 10,
+        "annual": 21,
+        "permissionsCountThisMonth": 0
+      }
+    }
+  ],
+  "locations": [
+    {
+      "id": "loc_hq",
+      "name": "SAATA Global Headquarters",
+      "code": "HQ-NORTH",
+      "address": "King Fahd Road, Business Tower, Suite 1200",
+      "city": "Riyadh",
+      "latitude": 24.7136,
+      "longitude": 46.6753,
+      "radiusMeters": 300,
+      "timezone": "AST (UTC+3)",
+      "color": "#3b82f6",
+      "description": "Main corporate headquarters and human resources administration center.",
+      "isActive": true
+    }
+  ],
   "attendance": [],
   "leaves": [],
   "permissions": [],
   "notifications": [],
   "activityLogs": [],
   "definitions": {
-    "leaves": [],
-    "permissions": [],
-    "grades": [],
+    "leaves": [
+      {
+        "id": "leave_cl",
+        "code": "CL",
+        "name": "Casual Leave",
+        "category": "paid",
+        "annualQuotaDays": 12,
+        "minDurationDays": 0.5,
+        "maxDurationDays": 3,
+        "maxConsecutiveDays": 3,
+        "allowAfterDays": 0,
+        "approvalBy": "manager_only",
+        "attachmentMandatory": false,
+        "carryForwardAllowed": false,
+        "maxCarryForwardDays": 0,
+        "encashmentAllowed": false,
+        "minNoticeDays": 1,
+        "halfDayAllowed": true,
+        "docRequiredAfterDays": 0,
+        "color": "#0284c7",
+        "description": "For unforeseen personal emergencies or short-term personal commitments.",
+        "isActive": true
+      },
+      {
+        "id": "leave_sl",
+        "code": "SL",
+        "name": "Sick / Medical Leave",
+        "category": "paid",
+        "annualQuotaDays": 10,
+        "minDurationDays": 0.5,
+        "maxDurationDays": 7,
+        "maxConsecutiveDays": 7,
+        "allowAfterDays": 0,
+        "approvalBy": "manager_only",
+        "attachmentMandatory": true,
+        "carryForwardAllowed": true,
+        "maxCarryForwardDays": 5,
+        "encashmentAllowed": false,
+        "minNoticeDays": 0,
+        "halfDayAllowed": true,
+        "docRequiredAfterDays": 2,
+        "color": "#16a34a",
+        "description": "For illness, health appointments, and medical recuperation.",
+        "isActive": true
+      },
+      {
+        "id": "leave_al",
+        "code": "AL",
+        "name": "Annual / Vacation Leave (PTO)",
+        "category": "paid",
+        "annualQuotaDays": 18,
+        "minDurationDays": 1,
+        "maxDurationDays": 14,
+        "maxConsecutiveDays": 14,
+        "allowAfterDays": 90,
+        "approvalBy": "both",
+        "attachmentMandatory": false,
+        "carryForwardAllowed": true,
+        "maxCarryForwardDays": 8,
+        "encashmentAllowed": true,
+        "minNoticeDays": 3,
+        "halfDayAllowed": false,
+        "docRequiredAfterDays": 0,
+        "color": "#d97706",
+        "description": "Earned paid vacation time for planned rest, travel, and holidays.",
+        "isActive": true
+      },
+      {
+        "id": "leave_ml",
+        "code": "ML",
+        "name": "Maternity Leave",
+        "category": "statutory",
+        "annualQuotaDays": 90,
+        "minDurationDays": 30,
+        "maxDurationDays": 90,
+        "maxConsecutiveDays": 90,
+        "allowAfterDays": 180,
+        "approvalBy": "both",
+        "attachmentMandatory": true,
+        "carryForwardAllowed": false,
+        "maxCarryForwardDays": 0,
+        "encashmentAllowed": false,
+        "minNoticeDays": 30,
+        "halfDayAllowed": false,
+        "docRequiredAfterDays": 1,
+        "color": "#db2777",
+        "description": "Statutory maternity leave for expecting and new mothers.",
+        "isActive": true
+      },
+      {
+        "id": "leave_pl",
+        "code": "PL",
+        "name": "Paternity Leave",
+        "category": "statutory",
+        "annualQuotaDays": 10,
+        "minDurationDays": 1,
+        "maxDurationDays": 10,
+        "maxConsecutiveDays": 10,
+        "allowAfterDays": 180,
+        "approvalBy": "both",
+        "attachmentMandatory": true,
+        "carryForwardAllowed": false,
+        "maxCarryForwardDays": 0,
+        "encashmentAllowed": false,
+        "minNoticeDays": 14,
+        "halfDayAllowed": false,
+        "docRequiredAfterDays": 1,
+        "color": "#7c3aed",
+        "description": "Statutory paid leave for new fathers upon birth or legal adoption.",
+        "isActive": true
+      },
+      {
+        "id": "leave_bl",
+        "code": "BL",
+        "name": "Bereavement Leave",
+        "category": "paid",
+        "annualQuotaDays": 5,
+        "minDurationDays": 1,
+        "maxDurationDays": 5,
+        "maxConsecutiveDays": 5,
+        "allowAfterDays": 0,
+        "approvalBy": "manager_only",
+        "attachmentMandatory": false,
+        "carryForwardAllowed": false,
+        "maxCarryForwardDays": 0,
+        "encashmentAllowed": false,
+        "minNoticeDays": 0,
+        "halfDayAllowed": false,
+        "docRequiredAfterDays": 0,
+        "color": "#475569",
+        "description": "Compassionate leave granted upon loss of an immediate family member.",
+        "isActive": true
+      },
+      {
+        "id": "leave_co",
+        "code": "CO",
+        "name": "Compensatory Off (Comp-Off)",
+        "category": "paid",
+        "annualQuotaDays": 6,
+        "minDurationDays": 0.5,
+        "maxDurationDays": 2,
+        "maxConsecutiveDays": 2,
+        "allowAfterDays": 30,
+        "approvalBy": "manager_only",
+        "attachmentMandatory": false,
+        "carryForwardAllowed": false,
+        "maxCarryForwardDays": 0,
+        "encashmentAllowed": false,
+        "minNoticeDays": 2,
+        "halfDayAllowed": true,
+        "docRequiredAfterDays": 0,
+        "color": "#0891b2",
+        "description": "Credits earned for approved weekend or public holiday work shifts.",
+        "isActive": true
+      },
+      {
+        "id": "leave_ul",
+        "code": "UL",
+        "name": "Unpaid Leave (LOP)",
+        "category": "unpaid",
+        "annualQuotaDays": 30,
+        "minDurationDays": 1,
+        "maxDurationDays": 30,
+        "maxConsecutiveDays": 30,
+        "allowAfterDays": 0,
+        "approvalBy": "both",
+        "attachmentMandatory": false,
+        "carryForwardAllowed": false,
+        "maxCarryForwardDays": 0,
+        "encashmentAllowed": false,
+        "minNoticeDays": 7,
+        "halfDayAllowed": true,
+        "docRequiredAfterDays": 0,
+        "color": "#dc2626",
+        "description": "Loss of Pay leave for extended personal requirements when balances are exhausted.",
+        "isActive": true
+      }
+    ],
+    "permissions": [
+      {
+        "id": "perm_official",
+        "code": "PERM_OFFICIAL",
+        "name": "Official Duty / Client Meeting",
+        "maxPerMonth": 4,
+        "maxHoursPerInstance": 3.5,
+        "monthlyHoursCap": 8,
+        "requiresManagerApproval": true,
+        "isPaid": true,
+        "allowedTimeWindow": "any",
+        "description": "On-duty pass for offsite client visits, partner discussions, or government agency meetings.",
+        "isActive": true
+      },
+      {
+        "id": "perm_medical",
+        "code": "PERM_MEDICAL",
+        "name": "Hospital / Medical Checkup",
+        "maxPerMonth": 2,
+        "maxHoursPerInstance": 2,
+        "monthlyHoursCap": 4,
+        "requiresManagerApproval": true,
+        "isPaid": true,
+        "allowedTimeWindow": "any",
+        "description": "Doctor visits, diagnostic tests, or urgent medical clinic consultations.",
+        "isActive": true
+      },
+      {
+        "id": "perm_personal",
+        "code": "PERM_PERSONAL",
+        "name": "Personal Emergency",
+        "maxPerMonth": 2,
+        "maxHoursPerInstance": 2,
+        "monthlyHoursCap": 3,
+        "requiresManagerApproval": true,
+        "isPaid": true,
+        "allowedTimeWindow": "mid_day",
+        "description": "Short-duration domestic emergencies, bank formalities, or urgent home needs.",
+        "isActive": true
+      },
+      {
+        "id": "perm_late",
+        "code": "PERM_LATE",
+        "name": "Late Entry Permission",
+        "maxPerMonth": 3,
+        "maxHoursPerInstance": 1.5,
+        "monthlyHoursCap": 3,
+        "requiresManagerApproval": false,
+        "isPaid": true,
+        "allowedTimeWindow": "start_of_day",
+        "description": "Pre-informed delayed morning arrival without triggering late attendance penalties.",
+        "isActive": true
+      },
+      {
+        "id": "perm_early",
+        "code": "PERM_EARLY",
+        "name": "Early Exit Permission",
+        "maxPerMonth": 2,
+        "maxHoursPerInstance": 1.5,
+        "monthlyHoursCap": 3,
+        "requiresManagerApproval": true,
+        "isPaid": true,
+        "allowedTimeWindow": "end_of_day",
+        "description": "Authorized departure before shift end time for valid reasons.",
+        "isActive": true
+      },
+      {
+        "id": "perm_weather",
+        "code": "PERM_WEATHER",
+        "name": "Weather / Transit Delay",
+        "maxPerMonth": 3,
+        "maxHoursPerInstance": 2.5,
+        "monthlyHoursCap": 5,
+        "requiresManagerApproval": false,
+        "isPaid": true,
+        "allowedTimeWindow": "start_of_day",
+        "description": "Transit disruptions, severe weather, or public transport strikes.",
+        "isActive": true
+      }
+    ],
+    "grades": [
+      {
+        "id": "gr_e1",
+        "gradeCode": "GR-E1",
+        "gradeName": "Associate / Junior Staff",
+        "gradeNameAr": "موظف مبتدئ / كادر مساعد",
+        "level": 1,
+        "designations": [
+          "Junior Software Engineer",
+          "QA Associate",
+          "Associate Financial Analyst",
+          "Support Specialist"
+        ],
+        "monthlyHoursTarget": 160,
+        "overtimeEligible": true,
+        "allowedLeaveCodes": [
+          "CL",
+          "SL",
+          "AL",
+          "BL",
+          "CO",
+          "UL"
+        ],
+        "travelPerDiemTier": "Tier 3",
+        "travelPerDiemAmount": 45,
+        "hotelCapPerNight": 120,
+        "noticePeriodDays": 30,
+        "probationMonths": 3,
+        "annualLeaveMultiplier": 1,
+        "color": "#0284c7",
+        "description": "Entry level and junior staff roles. Standard leave quotas and direct shift timing compliance.",
+        "isActive": true
+      },
+      {
+        "id": "gr_e2",
+        "gradeCode": "GR-E2",
+        "gradeName": "Professional / Senior Engineer",
+        "gradeNameAr": "أخصائي / مهندس أول",
+        "level": 2,
+        "designations": [
+          "Senior Software Engineer",
+          "Frontend React Architect",
+          "Senior Financial Analyst",
+          "DevOps & SRE Specialist"
+        ],
+        "monthlyHoursTarget": 160,
+        "overtimeEligible": false,
+        "allowedLeaveCodes": [
+          "CL",
+          "SL",
+          "AL",
+          "ML",
+          "PL",
+          "BL",
+          "CO",
+          "UL"
+        ],
+        "travelPerDiemTier": "Tier 2",
+        "travelPerDiemAmount": 65,
+        "hotelCapPerNight": 160,
+        "noticePeriodDays": 60,
+        "probationMonths": 3,
+        "annualLeaveMultiplier": 1.1,
+        "color": "#059669",
+        "description": "Mid-to-senior specialized individual contributors. Flexible shift arrival window and tier-2 travel allowances.",
+        "isActive": true
+      },
+      {
+        "id": "gr_m1",
+        "gradeCode": "GR-M1",
+        "gradeName": "Team Lead / Manager",
+        "gradeNameAr": "قائد فريق / مدير قسم",
+        "level": 3,
+        "designations": [
+          "Engineering Manager",
+          "People & Culture Lead",
+          "Operations Lead",
+          "Marketing Manager"
+        ],
+        "monthlyHoursTarget": 160,
+        "overtimeEligible": false,
+        "allowedLeaveCodes": [
+          "CL",
+          "SL",
+          "AL",
+          "ML",
+          "PL",
+          "BL",
+          "CO",
+          "UL"
+        ],
+        "travelPerDiemTier": "Tier 1",
+        "travelPerDiemAmount": 85,
+        "hotelCapPerNight": 200,
+        "noticePeriodDays": 60,
+        "probationMonths": 3,
+        "annualLeaveMultiplier": 1.25,
+        "color": "#d97706",
+        "description": "First-line managers with team approval authority for leaves, permissions, and attendance regularization.",
+        "isActive": true
+      },
+      {
+        "id": "gr_m2",
+        "gradeCode": "GR-M2",
+        "gradeName": "Department Head / Director",
+        "gradeNameAr": "رئيس دائرة / مدير تنفيذي",
+        "level": 4,
+        "designations": [
+          "VP of Engineering",
+          "Director of People",
+          "Chief Legal Counsel",
+          "Director of Global Operations"
+        ],
+        "monthlyHoursTarget": 155,
+        "overtimeEligible": false,
+        "allowedLeaveCodes": [
+          "CL",
+          "SL",
+          "AL",
+          "ML",
+          "PL",
+          "BL",
+          "CO",
+          "UL"
+        ],
+        "travelPerDiemTier": "Tier 1",
+        "travelPerDiemAmount": 110,
+        "hotelCapPerNight": 250,
+        "noticePeriodDays": 90,
+        "probationMonths": 6,
+        "annualLeaveMultiplier": 1.4,
+        "color": "#7c3aed",
+        "description": "Senior management and department directors with cross-functional oversight and elevated travel perks.",
+        "isActive": true
+      },
+      {
+        "id": "gr_ex",
+        "gradeCode": "GR-EX",
+        "gradeName": "Executive / C-Suite / Admin",
+        "gradeNameAr": "إدارة عليا / قيادة تنفيذية",
+        "level": 5,
+        "designations": [
+          "CEO",
+          "CTO",
+          "COO",
+          "Super Admin"
+        ],
+        "monthlyHoursTarget": 150,
+        "overtimeEligible": false,
+        "allowedLeaveCodes": [
+          "CL",
+          "SL",
+          "AL",
+          "ML",
+          "PL",
+          "BL",
+          "CO",
+          "UL"
+        ],
+        "travelPerDiemTier": "Executive",
+        "travelPerDiemAmount": 150,
+        "hotelCapPerNight": 350,
+        "noticePeriodDays": 90,
+        "probationMonths": 6,
+        "annualLeaveMultiplier": 1.5,
+        "color": "#be123c",
+        "description": "Executive leadership with enterprise-wide governance, global geofence bypass, and full system administration.",
+        "isActive": true
+      }
+    ],
     "taPolicy": {
-      "lateGraceMinutes": 15,
-      "earlyCheckoutGraceMinutes": 15,
-      "overtimeGraceMinutes": 30,
-      "halfDayCutoffHours": 4,
-      "fullDayCutoffHours": 8,
-      "weeklyHolidayDays": [
-        0
-      ],
-      "biometricMandatory": false,
-      "faceRecognitionMandatory": false,
-      "allowRemotePunch": false,
-      "lockDeviceToOneEmployee": true,
-      "requireLeaveApproval": true,
-      "requirePermissionSlip": true,
-      "autoCheckoutAtMidnight": true
+      "gracePeriodMinutes": 15,
+      "lateMarkPenaltyCount": 3,
+      "halfDayMinimumHours": 4.5,
+      "fullDayMinimumHours": 8,
+      "strictGeofenceEnforcement": true,
+      "gpsAccuracyToleranceMeters": 50,
+      "autoCheckoutAtMidnight": true,
+      "allowBiometricBypass": false,
+      "overtimeMinMinutes": 60,
+      "weekendWorkAutoCompOff": true,
+      "mileageRatePerKm": 0.65,
+      "dailyAllowanceMetro": 75,
+      "dailyAllowanceNonMetro": 50,
+      "foodAllowancePerDay": 35,
+      "outstationAdvanceAllowed": true,
+      "requireExpenseReceiptsAbove": 25,
+      "claimSubmissionWindowDays": 15
     },
-    "holidays": [],
+    "holidays": [
+      {
+        "id": "hol_01",
+        "name": "New Year's Day",
+        "date": "2026-01-01",
+        "dayOfWeek": "Thursday",
+        "type": "public",
+        "applicableLocationIds": [
+          "all"
+        ],
+        "description": "First day of the Gregorian calendar year.",
+        "isRecurringYearly": true,
+        "isActive": true
+      },
+      {
+        "id": "hol_02",
+        "name": "Martin Luther King Jr. Day",
+        "date": "2026-01-19",
+        "dayOfWeek": "Monday",
+        "type": "public",
+        "applicableLocationIds": [
+          "all"
+        ],
+        "description": "Federal holiday marking the birthday of Dr. Martin Luther King Jr.",
+        "isRecurringYearly": true,
+        "isActive": true
+      },
+      {
+        "id": "hol_03",
+        "name": "Presidents' Day / Washington's Birthday",
+        "date": "2026-02-16",
+        "dayOfWeek": "Monday",
+        "type": "public",
+        "applicableLocationIds": [
+          "all"
+        ],
+        "description": "Honoring all past presidents of the United States.",
+        "isRecurringYearly": true,
+        "isActive": true
+      },
+      {
+        "id": "hol_04",
+        "name": "Memorial Day",
+        "date": "2026-05-25",
+        "dayOfWeek": "Monday",
+        "type": "public",
+        "applicableLocationIds": [
+          "all"
+        ],
+        "description": "National day of remembrance for military personnel.",
+        "isRecurringYearly": true,
+        "isActive": true
+      },
+      {
+        "id": "hol_05",
+        "name": "Juneteenth National Independence Day",
+        "date": "2026-06-19",
+        "dayOfWeek": "Friday",
+        "type": "public",
+        "applicableLocationIds": [
+          "all"
+        ],
+        "description": "Commemorating the emancipation of enslaved African Americans.",
+        "isRecurringYearly": true,
+        "isActive": true
+      },
+      {
+        "id": "hol_06",
+        "name": "Independence Day (Observed)",
+        "date": "2026-07-03",
+        "dayOfWeek": "Friday",
+        "type": "public",
+        "applicableLocationIds": [
+          "all"
+        ],
+        "description": "Celebration of the Declaration of Independence.",
+        "isRecurringYearly": true,
+        "isActive": true
+      },
+      {
+        "id": "hol_07",
+        "name": "Labor Day",
+        "date": "2026-09-07",
+        "dayOfWeek": "Monday",
+        "type": "public",
+        "applicableLocationIds": [
+          "all"
+        ],
+        "description": "Honoring the American labor movement and workers.",
+        "isRecurringYearly": true,
+        "isActive": true
+      },
+      {
+        "id": "hol_08",
+        "name": "Thanksgiving Day",
+        "date": "2026-11-26",
+        "dayOfWeek": "Thursday",
+        "type": "public",
+        "applicableLocationIds": [
+          "all"
+        ],
+        "description": "National day of Thanksgiving with family gathering.",
+        "isRecurringYearly": true,
+        "isActive": true
+      },
+      {
+        "id": "hol_09",
+        "name": "Day After Thanksgiving (Black Friday)",
+        "date": "2026-11-27",
+        "dayOfWeek": "Friday",
+        "type": "company",
+        "applicableLocationIds": [
+          "all"
+        ],
+        "description": "Company-sponsored holiday following Thanksgiving.",
+        "isRecurringYearly": true,
+        "isActive": true
+      },
+      {
+        "id": "hol_10",
+        "name": "Christmas Eve (Half Day / Optional)",
+        "date": "2026-12-24",
+        "dayOfWeek": "Thursday",
+        "type": "optional",
+        "applicableLocationIds": [
+          "all"
+        ],
+        "description": "Optional floating holiday / half-day for holiday prep.",
+        "isRecurringYearly": true,
+        "isActive": true
+      },
+      {
+        "id": "hol_11",
+        "name": "Christmas Day",
+        "date": "2026-12-25",
+        "dayOfWeek": "Friday",
+        "type": "public",
+        "applicableLocationIds": [
+          "all"
+        ],
+        "description": "Celebrating the Christmas holiday.",
+        "isRecurringYearly": true,
+        "isActive": true
+      }
+    ],
     "workSchedule": {
-      "id": "ws_default",
-      "name": "Standard General Shift",
-      "shiftType": "general",
-      "shiftStart": "09:00",
-      "shiftEnd": "17:00",
-      "breakMinutes": 60,
-      "workDays": [
-        "Mon",
-        "Tue",
-        "Wed",
-        "Thu",
-        "Fri",
-        "Sat"
+      "id": "sched_main",
+      "name": "Standard Corporate Work Schedule",
+      "workingDays": [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday"
+      ],
+      "saturdayRule": "all_off",
+      "weeklyWorkHours": 40,
+      "defaultShiftId": "shift_general",
+      "shifts": [
+        {
+          "id": "shift_general",
+          "name": "General Corporate Shift (HQ Standard)",
+          "code": "GEN-09",
+          "startTime": "09:00",
+          "endTime": "18:00",
+          "breakDurationMinutes": 60,
+          "netWorkHours": 8,
+          "isFlexible": false,
+          "color": "#0284c7",
+          "applicableDepartments": [
+            "all"
+          ],
+          "isActive": true
+        },
+        {
+          "id": "shift_early",
+          "name": "Early Morning Shift",
+          "code": "EARLY-07",
+          "startTime": "07:00",
+          "endTime": "16:00",
+          "breakDurationMinutes": 60,
+          "netWorkHours": 8,
+          "isFlexible": false,
+          "color": "#059669",
+          "applicableDepartments": [
+            "Operations",
+            "Customer Support",
+            "Engineering"
+          ],
+          "isActive": true
+        },
+        {
+          "id": "shift_late",
+          "name": "Afternoon / Late Shift",
+          "code": "LATE-13",
+          "startTime": "13:00",
+          "endTime": "22:00",
+          "breakDurationMinutes": 60,
+          "netWorkHours": 8,
+          "isFlexible": false,
+          "color": "#d97706",
+          "applicableDepartments": [
+            "Operations",
+            "Customer Support"
+          ],
+          "isActive": true
+        },
+        {
+          "id": "shift_night",
+          "name": "Night Operations Shift",
+          "code": "NIGHT-21",
+          "startTime": "21:00",
+          "endTime": "06:00",
+          "breakDurationMinutes": 60,
+          "netWorkHours": 8,
+          "isFlexible": false,
+          "color": "#4f46e5",
+          "applicableDepartments": [
+            "Operations",
+            "DevOps & Infrastructure"
+          ],
+          "isActive": true
+        },
+        {
+          "id": "shift_flex",
+          "name": "Flexible Core Hours Band",
+          "code": "FLEX-BAND",
+          "startTime": "08:00",
+          "endTime": "19:00",
+          "breakDurationMinutes": 60,
+          "netWorkHours": 8,
+          "isFlexible": true,
+          "coreHoursStart": "10:00",
+          "coreHoursEnd": "16:00",
+          "color": "#7c3aed",
+          "applicableDepartments": [
+            "Engineering",
+            "Product Design",
+            "Marketing"
+          ],
+          "isActive": true
+        }
       ]
     }
   },
-  "deviceBindings": {}
+  "deviceBindings": {},
+  "isWiped": true
 }

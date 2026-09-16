@@ -3,26 +3,37 @@ import L from 'leaflet';
 import { useAttendance } from '../context/AttendanceContext';
 import { calculateDistanceMeters, formatDistance } from '../utils/geoUtils';
 
+import { GeoCoordinates, OfficeLocation } from '../types';
+
 interface GeofenceMapProps {
   height?: string;
   allowClickToTeleport?: boolean;
+  currentCoords?: GeoCoordinates;
+  offices?: OfficeLocation[];
+  nearestOffice?: OfficeLocation;
+  isInsideGeofence?: boolean;
 }
 
 export const GeofenceMap: React.FC<GeofenceMapProps> = ({
   height = '320px',
   allowClickToTeleport = true,
+  currentCoords: propCoords,
+  offices: propOffices,
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const layersGroupRef = useRef<L.LayerGroup | null>(null);
 
   const {
-    officeLocations,
+    officeLocations: contextOffices,
     currentEmployee,
-    currentCoords,
+    currentCoords: contextCoords,
     setManualLocation,
     isUsingRealGPS,
   } = useAttendance();
+
+  const officeLocations = propOffices || contextOffices;
+  const currentCoords = propCoords || contextCoords;
 
   // Initialize Map
   useEffect(() => {
@@ -71,8 +82,12 @@ export const GeofenceMap: React.FC<GeofenceMapProps> = ({
     layers.clearLayers();
 
     // 1. Draw Office Geofences
-    officeLocations.forEach((loc) => {
-      const isAllowed = currentEmployee.allowedLocationIds.includes(loc.id);
+    const safeLocations = Array.isArray(officeLocations) ? officeLocations : [];
+    const allowedLocIds = currentEmployee?.allowedLocationIds || [];
+    const isAllAllowed = allowedLocIds.length === 0 || allowedLocIds.includes('*') || allowedLocIds.includes('all');
+
+    safeLocations.forEach((loc) => {
+      const isAllowed = isAllAllowed || allowedLocIds.includes(loc.id);
       const color = isAllowed ? '#292524' : '#a8a29e';
       const fillColor = isAllowed ? '#44403c' : '#d6d3d1';
 
@@ -190,10 +205,10 @@ export const GeofenceMap: React.FC<GeofenceMapProps> = ({
 
     userMarker.bindPopup(`
       <div style="font-family: 'Plus Jakarta Sans', sans-serif; font-size: 12px; color: #1c1917;">
-        <strong style="color: #1c1917;">📍 ${currentEmployee.name}'s Current Position</strong><br/>
+        <strong style="color: #1c1917;">📍 ${currentEmployee?.name || 'Your'}'s Current Position</strong><br/>
         Lat: ${currentCoords.latitude.toFixed(6)}<br/>
         Lng: ${currentCoords.longitude.toFixed(6)}<br/>
-        Accuracy: ±${Math.round(currentCoords.accuracy)}m (${isUsingRealGPS ? 'Real GPS' : 'Simulated GPS'})
+        Accuracy: ±${Math.round(currentCoords.accuracy || 10)}m (${isUsingRealGPS ? 'Real GPS' : 'Simulated GPS'})
       </div>
     `);
     layers.addLayer(userMarker);

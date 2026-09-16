@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { AttendanceProvider, useAttendance } from './context/AttendanceContext';
+import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { Sidebar, NavigationTab } from './components/Sidebar';
 import { Dashboard } from './components/Dashboard';
 import { AttendanceView } from './components/AttendanceView';
@@ -10,43 +11,75 @@ import { EmployeeLogin } from './components/EmployeeLogin';
 import { EmployeeMobileApp } from './components/EmployeeMobileApp';
 import { useDeviceType } from './hooks/useDeviceType';
 import { LocationPermissionPrompt } from './components/LocationPermissionPrompt';
-import { LogOut } from 'lucide-react';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const MainAppContent: React.FC = () => {
   const {
     isAuthenticated,
     currentEmployee,
     isCurrentHR,
-    logout,
   } = useAttendance();
+  const { t, isRTL } = useLanguage();
 
   const { isMobile } = useDeviceType();
-  const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
+  const [currentTab, setCurrentTab] = useState<NavigationTab>(() => {
+    try {
+      const saved = localStorage.getItem('saata_active_tab_v1') as NavigationTab;
+      if (
+        saved &&
+        ['dashboard', 'attendance', 'requests', 'employees', 'definitions', 'locations', 'mobile_terminal'].includes(saved)
+      ) {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+    return 'dashboard';
+  });
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
 
+  const handleSetCurrentTab = (tab: NavigationTab) => {
+    setCurrentTab(tab);
+    try {
+      localStorage.setItem('saata_active_tab_v1', tab);
+    } catch {
+      // ignore
+    }
+  };
+
   // 1. Not Authenticated: Render Login (automatically adapted to mobile vs desktop)
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !currentEmployee) {
     return <EmployeeLogin isMobileScreen={isMobile} />;
   }
 
   // 2. Phone / Mobile Screen: Strictly and only render the Mobile Application View
   if (isMobile) {
-    return <EmployeeMobileApp />;
+    return (
+      <ErrorBoundary fallbackTitle="Mobile App Notice">
+        <EmployeeMobileApp />
+      </ErrorBoundary>
+    );
   }
 
   // 3. Desktop Site: Strictly and only render the Desktop Version
-  const portalTitle = isCurrentHR
+  const portalTitleKey = isCurrentHR
+    ? 'header.hr_portal'
+    : currentEmployee?.role === 'manager'
+    ? 'header.manager_portal'
+    : 'header.employee_portal';
+
+  const portalTitleFallback = isCurrentHR
     ? 'Enterprise Management & HR Control Desk'
-    : currentEmployee.role === 'manager'
+    : currentEmployee?.role === 'manager'
     ? 'Department Operations Workspace'
     : 'Employee Attendance & Workspace Portal';
 
   return (
-    <div className="h-screen max-h-screen bg-[#efe8de] text-stone-900 flex flex-row p-3 gap-3 overflow-hidden">
+    <div className={`h-screen max-h-screen bg-[#efe8de] text-stone-900 flex flex-row p-3 gap-3 overflow-hidden ${isRTL ? 'font-arabic' : ''}`}>
       {/* Sidebar Navigation on the Left */}
       <Sidebar
         currentTab={currentTab}
-        setCurrentTab={setCurrentTab}
+        setCurrentTab={handleSetCurrentTab}
         mobileOpen={mobileMenuOpen}
         setMobileOpen={setMobileMenuOpen}
       />
@@ -62,31 +95,18 @@ const MainAppContent: React.FC = () => {
           <div className="shrink-0 bg-white/75 border-b border-[#ded4c5] px-6 py-3 flex items-center justify-between backdrop-blur-xs">
             <div className="flex items-center gap-3">
               <span className="text-[11px] font-extrabold text-stone-700 uppercase tracking-wider bg-stone-100 px-2.5 py-1 rounded-lg border border-stone-200 shadow-2xs">
-                {portalTitle}
+                {t(portalTitleKey, portalTitleFallback)}
               </span>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                id="header-desktop-logout-btn"
-                onClick={logout}
-                title="Log Out of Workspace"
-                className="px-3 py-1.5 bg-stone-100 hover:bg-rose-50 text-stone-700 hover:text-rose-700 border border-stone-200 hover:border-rose-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer active:scale-98"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Log Out</span>
-              </button>
             </div>
           </div>
 
           {/* View Switcher */}
-          <main className="flex-1 min-h-0 p-4 sm:p-6 lg:p-7 overflow-y-auto">
+          <main className="flex-1 min-h-0 p-3.5 sm:p-4 lg:p-5 overflow-y-auto">
             {currentTab === 'dashboard' && (
               <Dashboard
-                onNavigateToMobile={() => setCurrentTab('attendance')}
-                onNavigateToRequests={() => setCurrentTab('requests')}
-                onNavigateToEmployees={() => setCurrentTab('employees')}
+                onNavigateToMobile={() => handleSetCurrentTab('attendance')}
+                onNavigateToRequests={() => handleSetCurrentTab('requests')}
+                onNavigateToEmployees={() => handleSetCurrentTab('employees')}
               />
             )}
 
@@ -110,8 +130,12 @@ const MainAppContent: React.FC = () => {
 
 export default function App() {
   return (
-    <AttendanceProvider>
-      <MainAppContent />
-    </AttendanceProvider>
+    <ErrorBoundary fallbackTitle="SAA Time and Attendance Portal">
+      <LanguageProvider>
+        <AttendanceProvider>
+          <MainAppContent />
+        </AttendanceProvider>
+      </LanguageProvider>
+    </ErrorBoundary>
   );
 }

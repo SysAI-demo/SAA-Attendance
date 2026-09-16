@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAttendance } from '../context/AttendanceContext';
+import { useLanguage } from '../context/LanguageContext';
 import { Employee, UserRole, ShiftTiming } from '../types';
 import {
   calculateLeaveCycle,
@@ -7,6 +8,8 @@ import {
 } from '../utils/leaveAnniversaryUtils';
 import {
   Users,
+  UserPlus,
+  User,
   Building2,
   Mail,
   Phone,
@@ -41,6 +44,7 @@ import {
   Eye,
   EyeOff,
   Power,
+  Save,
   UserX,
   CheckCircle,
   RotateCcw,
@@ -65,6 +69,7 @@ const AVATAR_PRESETS = [
 ];
 
 export const EmployeeDirectory: React.FC = () => {
+  const { t, isRTL } = useLanguage();
   const {
     employees,
     officeLocations,
@@ -87,7 +92,7 @@ export const EmployeeDirectory: React.FC = () => {
 
   // Helper to find assigned shift object for an employee
   const getAssignedShift = (emp: Employee): ShiftTiming | undefined => {
-    if (!emp || !workSchedule?.shifts) return undefined;
+    if (!emp || !workSchedule?.shifts || workSchedule.shifts.length === 0) return undefined;
     if (emp.shiftTimingId) {
       const found = workSchedule.shifts.find((s) => s.id === emp.shiftTimingId);
       if (found) return found;
@@ -148,6 +153,8 @@ export const EmployeeDirectory: React.FC = () => {
   // Modals State (HR)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [addModalTab, setAddModalTab] = useState<'basic' | 'account' | 'leaves'>('basic');
+  const [editModalTab, setEditModalTab] = useState<'basic' | 'account' | 'leaves'>('basic');
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const [locationAssignModalEmp, setLocationAssignModalEmp] = useState<Employee | null>(null);
   const [selectedLocationIds, setSelectedLocationIds] = useState<string[]>([]);
@@ -176,6 +183,7 @@ export const EmployeeDirectory: React.FC = () => {
   // Form State for Adding / Editing Employee
   const [formData, setFormData] = useState({
     name: '',
+    nameAr: '',
     email: '',
     username: '',
     password: '',
@@ -186,6 +194,7 @@ export const EmployeeDirectory: React.FC = () => {
     role: 'employee' as UserRole,
     department: 'Engineering',
     designation: '',
+    designationAr: '',
     gradeId: 'gr_e1',
     shiftTimingId: 'shift_general',
     phone: '+1 (415) 555-0100',
@@ -202,15 +211,20 @@ export const EmployeeDirectory: React.FC = () => {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
+  const safeEmployees = employees || [];
+  const safeLocations = officeLocations || [];
+  const safeGrades = gradeDefinitions || [];
+  const safeShifts = workSchedule?.shifts || [];
+
   // Find user's reporting manager
-  const userManager = employees.find(
-    (e) => e.id === currentEmployee.managerId || (e.role === 'manager' && e.id !== currentEmployee.id)
-  ) || employees.find((e) => e.role === 'manager');
+  const userManager = safeEmployees.find(
+    (e) => e && (e.id === currentEmployee?.managerId || (e.role === 'manager' && e.id !== currentEmployee?.id))
+  ) || safeEmployees.find((e) => e && e.role === 'manager');
 
   // Filtered employees for HR Directory
-  const departments = ['all', ...Array.from(new Set(employees.map((e) => e.department)))];
+  const departments = ['all', ...Array.from(new Set(safeEmployees.map((e) => e?.department).filter(Boolean)))];
 
-  const filteredEmployees = (employees || []).filter((emp) => {
+  const filteredEmployees = safeEmployees.filter((emp) => {
     if (!emp) return false;
     const q = searchQuery.toLowerCase().trim();
     const matchesSearch =
@@ -303,13 +317,15 @@ export const EmployeeDirectory: React.FC = () => {
 
   // Open Add Employee Modal
   const handleOpenAddModal = () => {
-    const nextCodeNum = 1000 + employees.length + 1;
-    const defaultGrade = gradeDefinitions.find((g) => g.isActive)?.id || gradeDefinitions[0]?.id || 'gr_e1';
-    const defaultShift = workSchedule.defaultShiftId || workSchedule.shifts[0]?.id || 'shift_general';
+    const nextCodeNum = 1000 + safeEmployees.length + 1;
+    const defaultGrade = safeGrades.find((g) => g?.isActive)?.id || safeGrades[0]?.id || 'gr_e1';
+    const defaultShift = workSchedule?.defaultShiftId || safeShifts[0]?.id || 'shift_general';
     setAvatarUploadError(null);
     setShowPassword(false);
+    setAddModalTab('basic');
     setFormData({
       name: '',
+      nameAr: '',
       email: '',
       username: '',
       password: 'password123',
@@ -320,6 +336,7 @@ export const EmployeeDirectory: React.FC = () => {
       role: 'employee',
       department: 'Engineering',
       designation: '',
+      designationAr: '',
       gradeId: defaultGrade,
       shiftTimingId: defaultShift,
       phone: '+1 (415) 555-0' + Math.floor(100 + Math.random() * 899),
@@ -347,6 +364,7 @@ export const EmployeeDirectory: React.FC = () => {
 
     addEmployee({
       name: formData.name.trim(),
+      nameAr: formData.nameAr.trim(),
       email: formData.email.trim(),
       username: derivedUsername,
       password: formData.password.trim() || 'password123',
@@ -357,6 +375,7 @@ export const EmployeeDirectory: React.FC = () => {
       role: formData.role,
       department: formData.department,
       designation: formData.designation.trim(),
+      designationAr: formData.designationAr.trim(),
       gradeId: formData.gradeId,
       workScheduleId: workSchedule.id,
       shiftTimingId: formData.shiftTimingId,
@@ -380,11 +399,13 @@ export const EmployeeDirectory: React.FC = () => {
   // Open Edit Employee Modal
   const handleOpenEditModal = (emp: Employee) => {
     setEditingEmployee(emp);
+    setEditModalTab('basic');
     setAvatarUploadError(null);
     setShowPassword(false);
-    const defaultShift = emp.shiftTimingId || workSchedule.defaultShiftId || workSchedule.shifts[0]?.id || 'shift_general';
+    const defaultShift = emp.shiftTimingId || workSchedule?.defaultShiftId || workSchedule?.shifts?.[0]?.id || 'shift_general';
     setFormData({
       name: emp.name,
+      nameAr: emp.nameAr || '',
       email: emp.email,
       username: emp.username || emp.employeeCode.toLowerCase().replace('-', ''),
       password: emp.password || 'password123',
@@ -395,7 +416,8 @@ export const EmployeeDirectory: React.FC = () => {
       role: emp.role,
       department: emp.department,
       designation: emp.designation,
-      gradeId: emp.gradeId || gradeDefinitions[0]?.id || 'gr_e1',
+      designationAr: emp.designationAr || '',
+      gradeId: emp.gradeId || gradeDefinitions?.[0]?.id || 'gr_e1',
       shiftTimingId: defaultShift,
       phone: emp.phone,
       joinedDate: emp.joinedDate,
@@ -415,6 +437,7 @@ export const EmployeeDirectory: React.FC = () => {
     const updated: Employee = {
       ...editingEmployee,
       name: formData.name.trim() || editingEmployee.name,
+      nameAr: formData.nameAr.trim(),
       email: formData.email.trim() || editingEmployee.email,
       username: formData.username.trim() || editingEmployee.username,
       password: formData.password.trim() || editingEmployee.password || 'password123',
@@ -425,6 +448,7 @@ export const EmployeeDirectory: React.FC = () => {
       role: formData.role,
       department: formData.department,
       designation: formData.designation.trim() || editingEmployee.designation,
+      designationAr: formData.designationAr.trim(),
       gradeId: formData.gradeId,
       workScheduleId: workSchedule.id,
       shiftTimingId: formData.shiftTimingId,
@@ -478,8 +502,8 @@ export const EmployeeDirectory: React.FC = () => {
   // VIEW 1: NORMAL USER (NON-HR) - ONLY SEE MY INFO & MY MANAGER
   // =========================================================================
   if (!isCurrentHR) {
-    const userAllowedOffices = officeLocations.filter((loc) =>
-      currentEmployee.allowedLocationIds.includes(loc.id)
+    const userAllowedOffices = safeLocations.filter((loc) =>
+      (currentEmployee?.allowedLocationIds || []).includes(loc.id)
     );
 
     return (
@@ -729,50 +753,51 @@ export const EmployeeDirectory: React.FC = () => {
       )}
 
       {/* Top Banner & HR Controls */}
-      <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl p-4 sm:p-6 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#ded4c5] pb-4">
-          <div>
+      <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-xl px-3.5 py-2 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Users className="w-4 h-4 text-stone-800 shrink-0" />
+          <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-bold text-stone-900 flex items-center gap-2">
-                <Users className="w-6 h-6 text-stone-800" />
-                <span>Employees & Staff Directory</span>
+              <h1 className="text-sm font-bold text-stone-900 leading-tight">
+                Employees & Staff Directory
               </h1>
-              <span className="text-xs bg-amber-100 text-amber-900 border border-amber-300 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>HR Admin Privileges</span>
+              <span className="text-[9px] font-bold uppercase tracking-wider bg-stone-900 text-stone-100 px-1.5 py-0.5 rounded flex items-center gap-1 shadow-2xs shrink-0">
+                <ShieldCheck className="w-2.5 h-2.5 text-amber-400" />
+                <span>HR Admin</span>
               </span>
             </div>
-            <p className="text-xs sm:text-sm text-stone-600 mt-1">
+            <p className="text-[11px] text-stone-600 truncate mt-0.5">
               Add new staff members, edit roles and designations, adjust leave quotas, and manage geofence office permissions.
             </p>
           </div>
-
-          <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-auto flex-wrap">
-            {/* Auto-Refill Anniversaries Check Button */}
-            <button
-              type="button"
-              id="hr-check-anniversary-refills-btn"
-              onClick={handleRunBatchRefills}
-              disabled={isCheckingRefills}
-              className="bg-white hover:bg-[#ede4d6] border border-[#ded4c5] text-stone-800 font-semibold px-3.5 py-2.5 rounded-xl shadow-2xs transition-colors cursor-pointer flex items-center gap-2 text-xs sm:text-sm disabled:opacity-50"
-              title="Checks work anniversaries for all employees and automatically refills leave balances without carryover"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 text-stone-700 ${isCheckingRefills ? 'animate-spin' : ''}`} />
-              <span>Check Anniversaries</span>
-            </button>
-
-            {/* "+ Add New Employee" HR Action */}
-            <button
-              type="button"
-              id="hr-add-new-employee-btn"
-              onClick={handleOpenAddModal}
-              className="bg-stone-900 hover:bg-stone-800 text-stone-50 font-semibold px-4 py-2.5 rounded-xl shadow-xs transition-colors cursor-pointer flex items-center gap-2 text-xs sm:text-sm"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add New Employee</span>
-            </button>
-          </div>
         </div>
+
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto flex-wrap">
+          {/* Auto-Refill Anniversaries Check Button */}
+          <button
+            type="button"
+            id="hr-check-anniversary-refills-btn"
+            onClick={handleRunBatchRefills}
+            disabled={isCheckingRefills}
+            className="bg-white hover:bg-[#ede4d6] border border-[#ded4c5] text-stone-800 font-semibold px-2.5 py-1 rounded-lg text-[11px] shadow-2xs transition-colors cursor-pointer flex items-center gap-1 disabled:opacity-50"
+            title="Checks work anniversaries for all employees and automatically refills leave balances without carryover"
+          >
+            <RefreshCw className={`w-3 h-3 text-stone-700 ${isCheckingRefills ? 'animate-spin' : ''}`} />
+            <span>Check Anniversaries</span>
+          </button>
+
+          {/* "+ Add New Employee" HR Action */}
+          <button
+            type="button"
+            id="hr-add-new-employee-btn"
+            onClick={handleOpenAddModal}
+            className="bg-stone-900 hover:bg-stone-800 text-stone-50 font-bold px-3 py-1 rounded-lg text-xs flex items-center gap-1 cursor-pointer shadow-2xs transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add New Employee</span>
+          </button>
+        </div>
+      </div>
 
         {/* HR Filters, Search Bar & View Mode Toggle */}
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -865,7 +890,6 @@ export const EmployeeDirectory: React.FC = () => {
             </span>
           </div>
         </div>
-      </div>
 
       {/* Empty State */}
       {filteredEmployees.length === 0 && (
@@ -895,8 +919,8 @@ export const EmployeeDirectory: React.FC = () => {
       {filteredEmployees.length > 0 && viewMode === 'grid' && (
         <div id="employees-tile-view" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {paginatedEmployees.map((emp) => {
-            const allowedOffices = officeLocations.filter((loc) =>
-              emp.allowedLocationIds.includes(loc.id)
+            const allowedOffices = safeLocations.filter((loc) =>
+              (emp.allowedLocationIds || []).includes(loc.id)
             );
             const isCurrentUser = emp.id === currentEmployee.id;
             const isEmpActive = emp.isActive !== false;
@@ -935,6 +959,11 @@ export const EmployeeDirectory: React.FC = () => {
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <h3 className="font-bold text-stone-900 text-sm sm:text-base leading-tight">
                             {emp.name}
+                            {emp.nameAr && (
+                              <span className="text-xs font-medium text-amber-900/80 ml-1.5" dir="rtl">
+                                ({emp.nameAr})
+                              </span>
+                            )}
                           </h3>
                           <span className="text-[10px] font-mono bg-[#ede4d6] text-stone-700 px-1.5 py-0.5 rounded border border-[#ded4c5]">
                             {emp.employeeCode}
@@ -944,10 +973,17 @@ export const EmployeeDirectory: React.FC = () => {
                           <AtSign className="w-3 h-3 text-stone-400" />
                           <span>{emp.username || emp.employeeCode.toLowerCase().replace('-', '')}</span>
                         </div>
-                        <p className="text-xs text-stone-700 font-medium">{emp.designation}</p>
+                        <p className="text-xs text-stone-700 font-medium">
+                          {emp.designation}
+                          {emp.designationAr && (
+                            <span className="text-[11px] text-stone-500 font-normal ml-1" dir="rtl">
+                              • {emp.designationAr}
+                            </span>
+                          )}
+                        </p>
                         <p className="text-[11px] text-stone-500">{emp.department}</p>
                         {(() => {
-                          const g = gradeDefinitions.find((gd) => gd.id === emp.gradeId || gd.gradeCode === emp.gradeId);
+                          const g = safeGrades.find((gd) => gd.id === emp.gradeId || gd.gradeCode === emp.gradeId);
                           if (!g) return null;
                           return (
                             <div className="pt-0.5">
@@ -1162,7 +1198,7 @@ export const EmployeeDirectory: React.FC = () => {
                           className="text-[10px] bg-white border border-[#ded4c5] px-2 py-0.5 rounded-lg text-stone-800 flex items-center gap-1 font-medium"
                         >
                           <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: loc.color }}></span>
-                          <span>{loc.name.split(' ')[0]}</span>
+                          <span>{loc.name ? loc.name.split(' ')[0] : 'Office'}</span>
                         </span>
                       ))}
                     </div>
@@ -1323,8 +1359,8 @@ export const EmployeeDirectory: React.FC = () => {
                           </div>
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5 leading-tight">
-                              <span className="font-bold text-stone-900 text-xs truncate max-w-[140px]" title={emp.name}>
-                                {emp.name}
+                              <span className="font-bold text-stone-900 text-xs truncate max-w-[200px]" title={emp.name}>
+                                {emp.name} {emp.nameAr ? `(${emp.nameAr})` : ''}
                               </span>
                               {isCurrentUser && (
                                 <span className="text-[8px] bg-stone-900 text-stone-100 font-bold px-1 py-0.1 rounded uppercase">
@@ -1361,9 +1397,9 @@ export const EmployeeDirectory: React.FC = () => {
                             {emp.department}
                           </p>
                           <div className="flex items-center gap-1.5 text-[10.5px] text-stone-600 flex-wrap">
-                            <span>{emp.designation}</span>
+                            <span>{emp.designation}{emp.designationAr ? ` • ${emp.designationAr}` : ''}</span>
                             {(() => {
-                              const g = gradeDefinitions.find((gd) => gd.id === emp.gradeId || gd.gradeCode === emp.gradeId);
+                              const g = safeGrades.find((gd) => gd.id === emp.gradeId || gd.gradeCode === emp.gradeId);
                               if (!g) return null;
                               return (
                                 <span
@@ -1556,492 +1592,594 @@ export const EmployeeDirectory: React.FC = () => {
       {/* ============================================================ */}
       {isAddModalOpen && (
         <div className="fixed inset-0 z-[1000] bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="border-b border-[#ded4c5] pb-3 flex items-center justify-between">
+          <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="border-b border-[#ded4c5] pb-3 flex items-start justify-between gap-3 shrink-0">
               <div>
-                <h3 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-                  <Plus className="w-5 h-5 text-stone-800" />
-                  <span>Register New Employee</span>
-                </h3>
-                <p className="text-xs text-stone-600">
-                  Create a new staff profile with login credentials, active status, and leave allowances.
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-stone-900 flex items-center gap-2">
+                    <UserPlus className="w-5 h-5 text-stone-800" />
+                    <span>Register New Employee</span>
+                  </h3>
+                  <span className="text-[10px] font-bold uppercase bg-stone-900 text-stone-100 px-2 py-0.5 rounded-md">
+                    HR Admin
+                  </span>
+                </div>
+                <p className="text-xs text-stone-600 mt-0.5">
+                  Complete the steps below to register staff details, login credentials, and initial leave allowances.
                 </p>
               </div>
+              <button
+                type="button"
+                onClick={() => setIsAddModalOpen(false)}
+                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-[#ede4d6] transition-colors cursor-pointer shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <form onSubmit={handleSaveNewEmployee} className="space-y-4">
-              {/* Profile Image & Upload Section */}
-              <div className="bg-white/80 border border-[#ded4c5] rounded-xl p-3.5 space-y-3">
-                <label className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
-                  <ImageIcon className="w-4 h-4 text-stone-600" />
-                  <span>Profile Photo & Avatar</span>
-                </label>
+            {/* Modal Tab Navigation */}
+            <div className="bg-[#ede4d6]/60 border border-[#ded4c5] p-1 rounded-xl flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setAddModalTab('basic')}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  addModalTab === 'basic'
+                    ? 'bg-stone-900 text-stone-100 shadow-2xs'
+                    : 'text-stone-700 hover:text-stone-900 hover:bg-white/50'
+                }`}
+              >
+                <User className="w-3.5 h-3.5" />
+                <span>1. Basic Profile</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAddModalTab('account')}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  addModalTab === 'account'
+                    ? 'bg-stone-900 text-stone-100 shadow-2xs'
+                    : 'text-stone-700 hover:text-stone-900 hover:bg-white/50'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>2. Account & Access</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAddModalTab('leaves')}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  addModalTab === 'leaves'
+                    ? 'bg-stone-900 text-stone-100 shadow-2xs'
+                    : 'text-stone-700 hover:text-stone-900 hover:bg-white/50'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>3. Joining & Leaves</span>
+              </button>
+            </div>
 
-                <div className="flex items-center gap-4">
-                  <div className="relative shrink-0">
-                    <img
-                      src={formData.avatar}
-                      alt="Employee preview"
-                      className="w-16 h-16 rounded-full object-cover border-2 border-stone-800 shadow-sm"
-                    />
-                    <span
-                      className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-white ${
-                        formData.isActive ? 'bg-emerald-500' : 'bg-rose-500'
-                      }`}
-                    />
-                  </div>
-
-                  <div className="space-y-2 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {/* Hidden File Input */}
+            <form onSubmit={handleSaveNewEmployee} className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {/* TAB 1: BASIC PROFILE */}
+              {addModalTab === 'basic' && (
+                <div className="space-y-3.5 animate-in fade-in duration-150">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-stone-800">Full Name (English) *</label>
                       <input
-                        type="file"
-                        ref={addFileInputRef}
-                        onChange={handleImageFileSelect}
-                        accept="image/png,image/jpeg,image/jpg,image/webp"
-                        className="hidden"
+                        type="text"
+                        required
+                        value={formData.name}
+                        onChange={(e) => {
+                          const newName = e.target.value;
+                          setFormData((prev) => ({
+                            ...prev,
+                            name: newName,
+                            username: prev.username || newName.toLowerCase().replace(/[^a-z0-9]/g, '.').replace(/\.+/g, '.'),
+                          }));
+                        }}
+                        placeholder="e.g. Jordan Miller"
+                        className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
                       />
-                      <button
-                        type="button"
-                        onClick={() => addFileInputRef.current?.click()}
-                        className="text-xs font-semibold bg-white hover:bg-[#ede4d6] border border-[#ded4c5] text-stone-800 px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-                      >
-                        <Upload className="w-3.5 h-3.5 text-stone-600" />
-                        <span>Upload Photo</span>
-                      </button>
-                      <span className="text-[10px] text-stone-500">Max 5MB (PNG, JPG, WebP)</span>
                     </div>
 
-                    {avatarUploadError && (
-                      <p className="text-[11px] text-rose-600 font-medium flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3" />
-                        <span>{avatarUploadError}</span>
-                      </p>
-                    )}
-
-                    {/* Presets */}
                     <div className="space-y-1">
-                      <span className="text-[10px] text-stone-500 block">Or pick a quick avatar preset:</span>
-                      <div className="flex items-center gap-2 overflow-x-auto py-0.5">
-                        {AVATAR_PRESETS.map((url, idx) => (
-                          <img
-                            key={idx}
-                            src={url}
-                            alt="Preset avatar"
-                            onClick={() => setFormData({ ...formData, avatar: url })}
-                            className={`w-8 h-8 rounded-full object-cover cursor-pointer border-2 transition-all shrink-0 ${
-                              formData.avatar === url
-                                ? 'border-stone-900 ring-2 ring-stone-800 scale-105'
-                                : 'border-transparent opacity-60 hover:opacity-100'
-                            }`}
-                          />
+                      <label className="text-xs font-bold text-stone-800 flex items-center justify-between">
+                        <span>Full Name (Arabic)</span>
+                        <span className="text-[10px] text-amber-700 font-medium">الاسم الكامل</span>
+                      </label>
+                      <input
+                        type="text"
+                        dir="rtl"
+                        value={formData.nameAr}
+                        onChange={(e) => setFormData({ ...formData, nameAr: e.target.value })}
+                        placeholder="مثال: جوردان ميلر"
+                        className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-stone-800">Employee Code *</label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.employeeCode}
+                        onChange={(e) => setFormData({ ...formData, employeeCode: e.target.value })}
+                        className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 font-mono focus:outline-hidden focus:border-stone-800"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-stone-800">Official Email *</label>
+                      <input
+                        type="email"
+                        required
+                        value={formData.email}
+                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        placeholder="jordan.m@company.com"
+                        className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-stone-800">Phone Number</label>
+                      <input
+                        type="text"
+                        value={formData.phone}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        placeholder="+971 50 123 4567"
+                        className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-stone-800">Department</label>
+                      <select
+                        value={formData.department}
+                        onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                        className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer"
+                      >
+                        <option value="Engineering">Engineering</option>
+                        <option value="Engineering & Product">Engineering & Product</option>
+                        <option value="Product Design">Product Design</option>
+                        <option value="Human Resources">Human Resources</option>
+                        <option value="Operations">Operations</option>
+                        <option value="Enterprise Sales">Enterprise Sales</option>
+                        <option value="Finance & Legal">Finance & Legal</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-stone-800">Designation (English) *</label>
+                      <input
+                        type="text"
+                        required
+                        value={formData.designation}
+                        onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
+                        placeholder="e.g. Software Engineer"
+                        className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-stone-800 flex items-center justify-between">
+                        <span>Designation (Arabic)</span>
+                        <span className="text-[10px] text-amber-700 font-medium">المسمى الوظيفي</span>
+                      </label>
+                      <input
+                        type="text"
+                        dir="rtl"
+                        value={formData.designationAr}
+                        onChange={(e) => setFormData({ ...formData, designationAr: e.target.value })}
+                        placeholder="مثال: مهندس برمجيات"
+                        className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-stone-800">Assigned Job Grade *</label>
+                      <select
+                        value={formData.gradeId}
+                        onChange={(e) => setFormData({ ...formData, gradeId: e.target.value })}
+                        className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer font-medium"
+                      >
+                        {safeGrades.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.gradeCode} — {g.gradeName} {g.gradeNameAr ? `(${g.gradeNameAr})` : ''}
+                          </option>
                         ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-stone-800">Reporting Manager</label>
+                      <select
+                        value={formData.managerId}
+                        onChange={(e) => setFormData({ ...formData, managerId: e.target.value })}
+                        className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer"
+                      >
+                        {safeEmployees
+                          .filter((e) => e.role === 'manager' || e.role === 'admin' || e.role === 'hr')
+                          .map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name} ({m.department})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: ACCOUNT & ACCESS */}
+              {addModalTab === 'account' && (
+                <div className="space-y-3.5 animate-in fade-in duration-150">
+                  <div className="bg-white/90 border border-[#ded4c5] rounded-xl p-3.5 space-y-2.5">
+                    <label className="text-xs font-bold text-stone-800 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <ImageIcon className="w-4 h-4 text-stone-600" />
+                        <span>Profile Photo & Avatar</span>
+                      </span>
+                      <span className="text-[10px] text-stone-500">Optional custom upload or preset</span>
+                    </label>
+
+                    <div className="flex items-center gap-3.5">
+                      <div className="relative shrink-0">
+                        <img
+                          src={formData.avatar}
+                          alt="Employee preview"
+                          className="w-14 h-14 rounded-full object-cover border-2 border-stone-800 shadow-xs"
+                        />
+                        <span
+                          className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white ${
+                            formData.isActive ? 'bg-emerald-500' : 'bg-rose-500'
+                          }`}
+                        />
+                      </div>
+
+                      <div className="space-y-1.5 flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <input
+                            type="file"
+                            ref={addFileInputRef}
+                            onChange={handleImageFileSelect}
+                            accept="image/png,image/jpeg,image/jpg,image/webp"
+                            className="hidden"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => addFileInputRef.current?.click()}
+                            className="text-xs font-semibold bg-white hover:bg-[#ede4d6] border border-[#ded4c5] text-stone-800 px-2.5 py-1 rounded-lg flex items-center gap-1 cursor-pointer shadow-2xs transition-colors"
+                          >
+                            <Upload className="w-3 h-3 text-stone-600" />
+                            <span>Upload Photo</span>
+                          </button>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+                          {AVATAR_PRESETS.map((url, idx) => (
+                            <img
+                              key={idx}
+                              src={url}
+                              alt="Preset avatar"
+                              onClick={() => setFormData({ ...formData, avatar: url })}
+                              className={`w-7 h-7 rounded-full object-cover cursor-pointer border transition-all shrink-0 ${
+                                formData.avatar === url
+                                  ? 'border-stone-900 ring-2 ring-stone-800 scale-105'
+                                  : 'border-transparent opacity-60 hover:opacity-100'
+                              }`}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white/90 border border-[#ded4c5] rounded-xl p-3.5 space-y-3">
+                    <div className="flex items-center justify-between border-b border-[#ded4c5]/60 pb-2">
+                      <label className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                        <Key className="w-4 h-4 text-stone-600" />
+                        <span>Login Credentials & System Role</span>
+                      </label>
+                      <span className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-semibold px-2 py-0.5 rounded">
+                        Security Clearance
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-stone-700">Username *</label>
+                          {formData.name && (
+                            <button
+                              type="button"
+                              onClick={() => handleAutoSuggestUsername(formData.name)}
+                              className="text-[10px] text-amber-700 hover:text-amber-900 font-semibold underline cursor-pointer flex items-center gap-0.5"
+                            >
+                              <Sparkles className="w-2.5 h-2.5" />
+                              <span>Auto</span>
+                            </button>
+                          )}
+                        </div>
+                        <div className="relative">
+                          <AtSign className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            required
+                            value={formData.username}
+                            onChange={(e) =>
+                              setFormData({
+                                ...formData,
+                                username: e.target.value.toLowerCase().replace(/\s+/g, '.'),
+                              })
+                            }
+                            placeholder="e.g. jordan.m"
+                            className="w-full bg-white border border-[#ded4c5] rounded-xl pl-8 pr-2 py-1.5 text-xs text-stone-900 font-mono focus:outline-hidden focus:border-stone-800"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-bold text-stone-700">Password *</label>
+                          <button
+                            type="button"
+                            onClick={handleGeneratePassword}
+                            className="text-[10px] text-amber-700 hover:text-amber-900 font-semibold underline cursor-pointer flex items-center gap-0.5"
+                          >
+                            <Sparkles className="w-2.5 h-2.5" />
+                            <span>Gen</span>
+                          </button>
+                        </div>
+                        <div className="relative">
+                          <Lock className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                          <input
+                            type={showPassword ? 'text' : 'password'}
+                            required
+                            value={formData.password}
+                            onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                            placeholder="Password"
+                            className="w-full bg-white border border-[#ded4c5] rounded-xl pl-8 pr-7 py-1.5 text-xs text-stone-900 font-mono focus:outline-hidden focus:border-stone-800"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer p-0.5"
+                          >
+                            {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-stone-700">System Role</label>
+                        <select
+                          value={formData.role}
+                          onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
+                          className="w-full bg-white border border-[#ded4c5] rounded-xl px-2.5 py-1.5 text-xs text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer font-medium"
+                        >
+                          <option value="employee">Standard Employee</option>
+                          <option value="manager">Manager (Approver)</option>
+                          <option value="hr">HR Specialist</option>
+                          <option value="admin">Administrator</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div
+                      onClick={() => setFormData({ ...formData, isActive: !formData.isActive })}
+                      className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
+                        formData.isActive
+                          ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950'
+                          : 'bg-rose-50/70 border-rose-300 text-rose-950'
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                          {formData.isActive ? (
+                            <UserCheck className="w-4 h-4 text-emerald-600" />
+                          ) : (
+                            <UserX className="w-4 h-4 text-rose-600" />
+                          )}
+                          <span className="text-xs font-bold">
+                            {formData.isActive ? 'Active Staff' : 'Inactive Staff'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] opacity-80">
+                          {formData.isActive ? 'Mobile login & attendance enabled' : 'Profile locked'}
+                        </p>
+                      </div>
+
+                      <div
+                        className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out shrink-0 ${
+                          formData.isActive ? 'bg-emerald-600' : 'bg-stone-400'
+                        }`}
+                      >
+                        <div
+                          className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
+                            formData.isActive ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    <div
+                      onClick={() => setFormData({ ...formData, canLogin: !formData.canLogin })}
+                      className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
+                        formData.canLogin !== false
+                          ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950'
+                          : 'bg-rose-50/70 border-rose-300 text-rose-950'
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-1.5">
+                          {formData.canLogin !== false ? (
+                            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                          ) : (
+                            <Ban className="w-4 h-4 text-rose-600" />
+                          )}
+                          <span className="text-xs font-bold">
+                            {formData.canLogin !== false ? 'Login Allowed' : 'Login Disabled'}
+                          </span>
+                        </div>
+                        <p className="text-[10px] opacity-80">
+                          {formData.canLogin !== false ? 'Authorized to sign in' : 'Access blocked'}
+                        </p>
+                      </div>
+
+                      <div
+                        className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out shrink-0 ${
+                          formData.canLogin !== false ? 'bg-emerald-600' : 'bg-stone-400'
+                        }`}
+                      >
+                        <div
+                          className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
+                            formData.canLogin !== false ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
                       </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              {/* Active / Inactive Employment Status Switch */}
-              <div
-                onClick={() => setFormData({ ...formData, isActive: !formData.isActive })}
-                className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
-                  formData.isActive
-                    ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950'
-                    : 'bg-rose-50/70 border-rose-300 text-rose-950'
-                }`}
-              >
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    {formData.isActive ? (
-                      <UserCheck className="w-4 h-4 text-emerald-600" />
-                    ) : (
-                      <UserX className="w-4 h-4 text-rose-600" />
-                    )}
-                    <span className="text-xs font-bold">
-                      {formData.isActive ? 'Active Employee Status' : 'Inactive / Deactivated Status'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] opacity-80">
-                    {formData.isActive
-                      ? 'Employee is allowed to log into the mobile app and record geofenced attendance.'
-                      : 'Account is locked. Employee cannot log in or submit requests.'}
-                  </p>
-                </div>
-
-                <div
-                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 ease-in-out shrink-0 ${
-                    formData.isActive ? 'bg-emerald-600' : 'bg-stone-400'
-                  }`}
-                >
-                  <div
-                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
-                      formData.isActive ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              {/* System Login Access Permission Toggle */}
-              <div
-                onClick={() => setFormData({ ...formData, canLogin: !formData.canLogin })}
-                className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
-                  formData.canLogin !== false
-                    ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950'
-                    : 'bg-rose-50/70 border-rose-300 text-rose-950'
-                }`}
-              >
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    {formData.canLogin !== false ? (
-                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                    ) : (
-                      <Ban className="w-4 h-4 text-rose-600" />
-                    )}
-                    <span className="text-xs font-bold">
-                      {formData.canLogin !== false ? 'System Login Allowed' : 'System Login Disabled'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] opacity-80">
-                    {formData.canLogin !== false
-                      ? 'Employee is authorized to log in to SAATA.'
-                      : 'Employee cannot log in or use the system until enabled by HR.'}
-                  </p>
-                </div>
-
-                <div
-                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 ease-in-out shrink-0 ${
-                    formData.canLogin !== false ? 'bg-emerald-600' : 'bg-stone-400'
-                  }`}
-                >
-                  <div
-                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
-                      formData.canLogin !== false ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-              </div>
-
-              {/* Login Credentials Box */}
-              <div className="bg-white/80 border border-[#ded4c5] rounded-xl p-3.5 space-y-3">
-                <div className="flex items-center justify-between border-b border-[#ded4c5]/60 pb-2">
-                  <label className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
-                    <Key className="w-4 h-4 text-stone-600" />
-                    <span>Login Credentials & Password</span>
-                  </label>
-                  <span className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-semibold px-2 py-0.5 rounded">
-                    Employee Sign-in
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Username */}
-                  <div className="space-y-1">
+              {/* TAB 3: JOINING & LEAVES */}
+              {addModalTab === 'leaves' && (
+                <div className="space-y-3.5 animate-in fade-in duration-150">
+                  <div className="bg-amber-50/60 border border-amber-200/80 rounded-xl p-3.5 space-y-2">
                     <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-stone-700">Username *</label>
-                      {formData.name && (
-                        <button
-                          type="button"
-                          onClick={() => handleAutoSuggestUsername(formData.name)}
-                          className="text-[10px] text-stone-600 hover:text-stone-900 font-semibold underline cursor-pointer flex items-center gap-0.5"
-                        >
-                          <Sparkles className="w-2.5 h-2.5 text-amber-600" />
-                          <span>Suggest</span>
-                        </button>
+                      <label className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                        <Calendar className="w-4 h-4 text-amber-700" />
+                        <span>Date of Joining (Annual Refill Anchor) *</span>
+                      </label>
+                      <span className="text-[9px] bg-amber-200 text-amber-950 font-bold px-2 py-0.5 rounded">
+                        Auto-Refill Anchor
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <input
+                          type="date"
+                          required
+                          value={formData.joinedDate}
+                          onChange={(e) => setFormData({ ...formData, joinedDate: e.target.value })}
+                          className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs text-stone-900 font-medium focus:outline-hidden focus:border-amber-600"
+                        />
+                      </div>
+                      {formData.joinedDate && (
+                        <div className="bg-white/90 border border-amber-200 rounded-xl px-3 py-1.5 flex flex-col justify-center text-[11px] text-amber-950">
+                          {(() => {
+                            const cycle = calculateLeaveCycle(formData.joinedDate);
+                            return (
+                              <div>
+                                <div className="font-semibold text-amber-900">
+                                  Next Refill: <span className="font-mono text-stone-900">{cycle.nextAnniversaryDate}</span>
+                                </div>
+                                <div className="text-[10px] text-stone-600">
+                                  Cycle Year: {cycle.yearsOfService + 1}
+                                </div>
+                              </div>
+                            );
+                          })()}
+                        </div>
                       )}
                     </div>
-                    <div className="relative">
-                      <AtSign className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        required
-                        value={formData.username}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            username: e.target.value.toLowerCase().replace(/\s+/g, '.'),
-                          })
-                        }
-                        placeholder="e.g. jordan.miller"
-                        className="w-full bg-white border border-[#ded4c5] rounded-xl pl-8 pr-3 py-2 text-xs sm:text-sm text-stone-900 font-mono focus:outline-hidden focus:border-stone-800"
-                      />
-                    </div>
                   </div>
 
-                  {/* Password */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-stone-700">Password *</label>
-                      <button
-                        type="button"
-                        onClick={handleGeneratePassword}
-                        className="text-[10px] text-stone-600 hover:text-stone-900 font-semibold underline cursor-pointer flex items-center gap-0.5"
-                      >
-                        <Sparkles className="w-2.5 h-2.5 text-amber-600" />
-                        <span>Generate</span>
-                      </button>
-                    </div>
-                    <div className="relative">
-                      <Lock className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        required
-                        value={formData.password}
-                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                        placeholder="Enter login password"
-                        className="w-full bg-white border border-[#ded4c5] rounded-xl pl-8 pr-9 py-2 text-xs sm:text-sm text-stone-900 font-mono focus:outline-hidden focus:border-stone-800"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer p-0.5"
-                      >
-                        {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
+                  <div className="bg-white/90 border border-[#ded4c5] rounded-xl p-3.5 space-y-2.5">
+                    <label className="text-xs font-bold text-stone-800 block">
+                      Initial Leave Allocations (Days)
+                    </label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-stone-500 font-medium block">Casual Leave</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={formData.casualLeave}
+                          onChange={(e) => setFormData({ ...formData, casualLeave: Number(e.target.value) })}
+                          className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-1.5 text-xs text-stone-900 font-bold text-center"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-stone-500 font-medium block">Sick Leave</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={formData.sickLeave}
+                          onChange={(e) => setFormData({ ...formData, sickLeave: Number(e.target.value) })}
+                          className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-1.5 text-xs text-stone-900 font-bold text-center"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <span className="text-[10px] text-stone-500 font-medium block">Annual PTO</span>
+                        <input
+                          type="number"
+                          min="0"
+                          value={formData.annualLeave}
+                          onChange={(e) => setFormData({ ...formData, annualLeave: Number(e.target.value) })}
+                          className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-1.5 text-xs text-stone-900 font-bold text-center"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              {/* Name & Code */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Full Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.name}
-                    onChange={(e) => {
-                      const newName = e.target.value;
-                      setFormData((prev) => ({
-                        ...prev,
-                        name: newName,
-                        username: prev.username || newName.toLowerCase().replace(/[^a-z0-9]/g, '.').replace(/\.+/g, '.'),
-                      }));
-                    }}
-                    placeholder="e.g. Jordan Miller"
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Employee Code *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.employeeCode}
-                    onChange={(e) => setFormData({ ...formData, employeeCode: e.target.value })}
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 font-mono focus:outline-hidden focus:border-stone-800"
-                  />
-                </div>
-              </div>
-
-              {/* Email & Phone */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Official Email *</label>
-                  <input
-                    type="email"
-                    required
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    placeholder="jordan.m@company.com"
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Phone</label>
-                  <input
-                    type="text"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
-                  />
-                </div>
-              </div>
-
-              {/* Department & Designation */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Department</label>
-                  <select
-                    value={formData.department}
-                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer"
-                  >
-                    <option value="Engineering">Engineering</option>
-                    <option value="Engineering & Product">Engineering & Product</option>
-                    <option value="Product Design">Product Design</option>
-                    <option value="Human Resources">Human Resources</option>
-                    <option value="Operations">Operations</option>
-                    <option value="Enterprise Sales">Enterprise Sales</option>
-                    <option value="Finance & Legal">Finance & Legal</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Job Title / Designation *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.designation}
-                    onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
-                    placeholder="e.g. Backend Software Engineer"
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
-                  />
-                </div>
-              </div>
-
-              {/* Assigned Job Grade */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-stone-700 flex items-center justify-between">
-                  <span>Assigned Job Grade *</span>
-                  <span className="text-[10px] text-stone-500 font-normal">Controls permitted leave types for this employee</span>
-                </label>
-                <select
-                  value={formData.gradeId}
-                  onChange={(e) => setFormData({ ...formData, gradeId: e.target.value })}
-                  className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer font-medium"
-                >
-                  {gradeDefinitions.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.gradeCode} — {g.gradeName} {g.gradeNameAr ? `(${g.gradeNameAr})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Role & Reporting Manager */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Role & Access Type</label>
-                  <select
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer"
-                  >
-                    <option value="employee">Standard Employee</option>
-                    <option value="manager">Manager (Approver)</option>
-                    <option value="hr">HR Employee (Directory Admin)</option>
-                    <option value="admin">Administrator</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Reporting Manager</label>
-                  <select
-                    value={formData.managerId}
-                    onChange={(e) => setFormData({ ...formData, managerId: e.target.value })}
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer"
-                  >
-                    {employees
-                      .filter((e) => e.role === 'manager' || e.role === 'admin' || e.role === 'hr')
-                      .map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name} ({m.department})
-                        </option>
-                      ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Date of Joining & Work Anniversary Refill Configuration */}
-              <div className="bg-amber-50/60 border border-amber-200/80 rounded-xl p-3.5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
-                    <Calendar className="w-4 h-4 text-amber-700" />
-                    <span>Date of Joining (Annual Refill Anchor) *</span>
-                  </label>
-                  <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-2 py-0.5 rounded">
-                    Auto-Refill Every Year
-                  </span>
-                </div>
-                <p className="text-[11px] text-amber-900/80">
-                  Every year on this exact date (the employee's work anniversary), their leaves will <strong>automatically refill</strong> to their grade quota without carry-over.
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <input
-                      type="date"
-                      required
-                      value={formData.joinedDate}
-                      onChange={(e) => setFormData({ ...formData, joinedDate: e.target.value })}
-                      className="w-full bg-white border border-amber-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 font-medium focus:outline-hidden focus:border-amber-600"
-                    />
-                  </div>
-                  {formData.joinedDate && (
-                    <div className="bg-white/80 border border-amber-200 rounded-xl px-3 py-1.5 flex flex-col justify-center text-[11px] text-amber-950">
-                      {(() => {
-                        const cycle = calculateLeaveCycle(formData.joinedDate);
-                        return (
-                          <div>
-                            <div className="font-semibold text-amber-900">
-                              Next Anniversary Refill: <span className="font-mono text-stone-900">{cycle.nextAnniversaryDate}</span>
-                            </div>
-                            <div className="text-[10px] text-stone-600">
-                              Upcoming Cycle: Year {cycle.yearsOfService + 1}
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Leave Quotas */}
-              <div className="space-y-1 pt-1">
-                <label className="text-xs font-bold text-stone-700">Initial Leave Balances (Days)</label>
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <span className="text-[10px] text-stone-500 font-medium">Casual</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={formData.casualLeave}
-                      onChange={(e) => setFormData({ ...formData, casualLeave: Number(e.target.value) })}
-                      className="w-full bg-white border border-[#ded4c5] rounded-xl px-2.5 py-1.5 text-xs text-stone-900"
-                    />
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-stone-500 font-medium">Sick</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={formData.sickLeave}
-                      onChange={(e) => setFormData({ ...formData, sickLeave: Number(e.target.value) })}
-                      className="w-full bg-white border border-[#ded4c5] rounded-xl px-2.5 py-1.5 text-xs text-stone-900"
-                    />
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-stone-500 font-medium">Annual PTO</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={formData.annualLeave}
-                      onChange={(e) => setFormData({ ...formData, annualLeave: Number(e.target.value) })}
-                      className="w-full bg-white border border-[#ded4c5] rounded-xl px-2.5 py-1.5 text-xs text-stone-900"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#ded4c5]">
+              {/* Modal Footer Controls */}
+              <div className="flex items-center justify-between gap-2 pt-3 border-t border-[#ded4c5] shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-[#ede4d6] text-stone-700 border border-[#ded4c5] cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-[#ede4d6] text-stone-700 border border-[#ded4c5] cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-semibold bg-stone-900 hover:bg-stone-800 text-stone-50 shadow-xs cursor-pointer"
-                >
-                  Save & Register Employee
-                </button>
+
+                <div className="flex items-center gap-2">
+                  {addModalTab !== 'basic' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (addModalTab === 'leaves') setAddModalTab('account');
+                        else if (addModalTab === 'account') setAddModalTab('basic');
+                      }}
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-[#ede4d6] text-stone-800 border border-[#ded4c5] cursor-pointer transition-colors"
+                    >
+                      ← Back
+                    </button>
+                  )}
+
+                  {addModalTab !== 'leaves' ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (addModalTab === 'basic') setAddModalTab('account');
+                        else if (addModalTab === 'account') setAddModalTab('leaves');
+                      }}
+                      className="px-4 py-1.5 rounded-xl text-xs font-bold bg-stone-900 hover:bg-stone-800 text-stone-50 shadow-2xs cursor-pointer transition-colors flex items-center gap-1"
+                    >
+                      <span>Next Step</span>
+                      <span>→</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      className="px-5 py-1.5 rounded-xl text-xs font-bold bg-stone-900 hover:bg-stone-800 text-stone-50 shadow-xs cursor-pointer transition-colors flex items-center gap-1"
+                    >
+                      <UserPlus className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Save & Register Employee</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </form>
           </div>
@@ -2053,568 +2191,673 @@ export const EmployeeDirectory: React.FC = () => {
       {/* ============================================================ */}
       {editingEmployee && (
         <div className="fixed inset-0 z-[1000] bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="border-b border-[#ded4c5] pb-3">
-              <h3 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-                <Edit2 className="w-5 h-5 text-stone-800" />
-                <span>Edit Employee: {editingEmployee.name}</span>
-              </h3>
-              <p className="text-xs text-stone-600">
-                Update personnel records, login credentials, active employment status, and leave allowances.
-              </p>
+          <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-2xl space-y-3.5 max-h-[90vh] flex flex-col">
+            <div className="flex items-start justify-between border-b border-[#ded4c5] pb-3 shrink-0">
+              <div>
+                <h3 className="text-base font-bold text-stone-900 flex items-center gap-2">
+                  <Edit2 className="w-4 h-4 text-stone-800" />
+                  <span>Edit Employee: {editingEmployee.name}</span>
+                </h3>
+                <p className="text-xs text-stone-600 mt-0.5">
+                  Update personnel records, login credentials, active employment status, and leave allowances.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingEmployee(null)}
+                className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-[#ede4d6] transition-colors cursor-pointer shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <form onSubmit={handleSaveEditEmployee} className="space-y-4">
-              {/* Profile Image & Upload Section */}
-              <div className="bg-white/80 border border-[#ded4c5] rounded-xl p-3.5 space-y-3">
-                <label className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
-                  <ImageIcon className="w-4 h-4 text-stone-600" />
-                  <span>Profile Photo & Avatar</span>
-                </label>
+            {/* Modal Tab Navigation */}
+            <div className="bg-[#ede4d6]/60 border border-[#ded4c5] p-1 rounded-xl flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setEditModalTab('basic')}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  editModalTab === 'basic'
+                    ? 'bg-stone-900 text-stone-100 shadow-2xs'
+                    : 'text-stone-700 hover:text-stone-900 hover:bg-white/50'
+                }`}
+              >
+                <User className="w-3.5 h-3.5" />
+                <span>1. Basic Profile</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditModalTab('account')}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  editModalTab === 'account'
+                    ? 'bg-stone-900 text-stone-100 shadow-2xs'
+                    : 'text-stone-700 hover:text-stone-900 hover:bg-white/50'
+                }`}
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>2. Account & Access</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditModalTab('leaves')}
+                className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  editModalTab === 'leaves'
+                    ? 'bg-stone-900 text-stone-100 shadow-2xs'
+                    : 'text-stone-700 hover:text-stone-900 hover:bg-white/50'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>3. Joining & Leaves</span>
+              </button>
+            </div>
 
-                <div className="flex items-center gap-4">
-                  <div className="relative shrink-0">
-                    <img
-                      src={formData.avatar}
-                      alt="Employee preview"
-                      className="w-16 h-16 rounded-full object-cover border-2 border-stone-800 shadow-sm"
-                    />
-                    <span
-                      className={`absolute bottom-0 right-0 w-4 h-4 rounded-full border-2 border-white ${
-                        formData.isActive ? 'bg-emerald-500' : 'bg-rose-500'
-                      }`}
-                    />
-                  </div>
+            <form onSubmit={handleSaveEditEmployee} className="flex-1 flex flex-col min-h-0 space-y-3.5">
+              <div className="flex-1 overflow-y-auto pr-1 space-y-3.5">
+                {/* TAB 1: BASIC PROFILE */}
+                {editModalTab === 'basic' && (
+                  <div className="space-y-3.5 animate-in fade-in duration-150">
+                    {/* Photo & Avatar */}
+                    <div className="bg-white/90 border border-[#ded4c5] rounded-xl p-3.5 space-y-2.5">
+                      <label className="text-xs font-bold text-stone-800 flex items-center justify-between">
+                        <span className="flex items-center gap-1.5">
+                          <ImageIcon className="w-4 h-4 text-stone-600" />
+                          <span>Profile Photo & Avatar</span>
+                        </span>
+                        <span className="text-[10px] text-stone-500">JPG, PNG, WebP or presets</span>
+                      </label>
 
-                  <div className="space-y-2 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {/* Hidden File Input */}
-                      <input
-                        type="file"
-                        ref={editFileInputRef}
-                        onChange={handleImageFileSelect}
-                        accept="image/png,image/jpeg,image/jpg,image/webp"
-                        className="hidden"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => editFileInputRef.current?.click()}
-                        className="text-xs font-semibold bg-white hover:bg-[#ede4d6] border border-[#ded4c5] text-stone-800 px-3 py-1.5 rounded-lg flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
-                      >
-                        <Upload className="w-3.5 h-3.5 text-stone-600" />
-                        <span>Upload New Photo</span>
-                      </button>
-                      <span className="text-[10px] text-stone-500">Max 5MB (PNG, JPG, WebP)</span>
-                    </div>
-
-                    {avatarUploadError && (
-                      <p className="text-[11px] text-rose-600 font-medium flex items-center gap-1">
-                        <AlertCircle className="w-3 h-3" />
-                        <span>{avatarUploadError}</span>
-                      </p>
-                    )}
-
-                    {/* Presets */}
-                    <div className="space-y-1">
-                      <span className="text-[10px] text-stone-500 block">Or select an avatar preset:</span>
-                      <div className="flex items-center gap-2 overflow-x-auto py-0.5">
-                        {AVATAR_PRESETS.map((url, idx) => (
+                      <div className="flex items-center gap-3.5">
+                        <div className="relative shrink-0">
                           <img
-                            key={idx}
-                            src={url}
-                            alt="Preset avatar"
-                            onClick={() => setFormData({ ...formData, avatar: url })}
-                            className={`w-8 h-8 rounded-full object-cover cursor-pointer border-2 transition-all shrink-0 ${
-                              formData.avatar === url
-                                ? 'border-stone-900 ring-2 ring-stone-800 scale-105'
-                                : 'border-transparent opacity-60 hover:opacity-100'
+                            src={formData.avatar}
+                            alt="Employee preview"
+                            className="w-14 h-14 rounded-full object-cover border-2 border-stone-800 shadow-xs"
+                          />
+                          <span
+                            className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white ${
+                              formData.isActive ? 'bg-emerald-500' : 'bg-rose-500'
                             }`}
                           />
-                        ))}
+                        </div>
+
+                        <div className="space-y-1.5 flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <input
+                              type="file"
+                              ref={editFileInputRef}
+                              onChange={handleImageFileSelect}
+                              accept="image/png,image/jpeg,image/jpg,image/webp"
+                              className="hidden"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => editFileInputRef.current?.click()}
+                              className="text-xs font-semibold bg-white hover:bg-[#ede4d6] border border-[#ded4c5] text-stone-800 px-2.5 py-1 rounded-lg flex items-center gap-1 cursor-pointer shadow-2xs transition-colors"
+                            >
+                              <Upload className="w-3 h-3 text-stone-600" />
+                              <span>Upload Photo</span>
+                            </button>
+                          </div>
+
+                          {avatarUploadError && (
+                            <p className="text-[10px] text-rose-600 font-medium flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" />
+                              <span>{avatarUploadError}</span>
+                            </p>
+                          )}
+
+                          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5">
+                            {AVATAR_PRESETS.map((url, idx) => (
+                              <img
+                                key={idx}
+                                src={url}
+                                alt="Preset avatar"
+                                onClick={() => setFormData({ ...formData, avatar: url })}
+                                className={`w-7 h-7 rounded-full object-cover cursor-pointer border transition-all shrink-0 ${
+                                  formData.avatar === url
+                                    ? 'border-stone-900 ring-2 ring-stone-800 scale-105'
+                                    : 'border-transparent opacity-60 hover:opacity-100'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Full Name English & Arabic */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-stone-800">Full Name (English) *</label>
+                        <input
+                          type="text"
+                          required
+                          value={formData.name}
+                          onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                          className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-stone-800 flex items-center justify-between">
+                          <span>Full Name (Arabic)</span>
+                          <span className="text-[10px] text-amber-700 font-medium">الاسم الكامل</span>
+                        </label>
+                        <input
+                          type="text"
+                          dir="rtl"
+                          value={formData.nameAr}
+                          onChange={(e) => setFormData({ ...formData, nameAr: e.target.value })}
+                          placeholder="مثال: جوردان ميلر"
+                          className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Email & Phone */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-stone-800">Official Email *</label>
+                        <input
+                          type="email"
+                          required
+                          value={formData.email}
+                          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                          className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-stone-800">Phone Number</label>
+                        <input
+                          type="text"
+                          value={formData.phone}
+                          onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                          placeholder="+971 50 123 4567"
+                          className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Department & Designations */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-stone-800">Department</label>
+                        <select
+                          value={formData.department}
+                          onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                          className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer"
+                        >
+                          <option value="Engineering">Engineering</option>
+                          <option value="Engineering & Product">Engineering & Product</option>
+                          <option value="Product Design">Product Design</option>
+                          <option value="Human Resources">Human Resources</option>
+                          <option value="Operations">Operations</option>
+                          <option value="Enterprise Sales">Enterprise Sales</option>
+                          <option value="Finance & Legal">Finance & Legal</option>
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-stone-800">Designation (English) *</label>
+                        <input
+                          type="text"
+                          required
+                          value={formData.designation}
+                          onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
+                          className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-stone-800 flex items-center justify-between">
+                          <span>Designation (Arabic)</span>
+                          <span className="text-[10px] text-amber-700 font-medium">المسمى الوظيفي</span>
+                        </label>
+                        <input
+                          type="text"
+                          dir="rtl"
+                          value={formData.designationAr}
+                          onChange={(e) => setFormData({ ...formData, designationAr: e.target.value })}
+                          placeholder="مثال: مهندس برمجيات"
+                          className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Grade & Shift */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-stone-800">Assigned Job Grade *</label>
+                        <select
+                          value={formData.gradeId}
+                          onChange={(e) => setFormData({ ...formData, gradeId: e.target.value })}
+                          className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer font-medium"
+                        >
+                          {safeGrades.map((g) => (
+                            <option key={g.id} value={g.id}>
+                              {g.gradeCode} — {g.gradeName} {g.gradeNameAr ? `(${g.gradeNameAr})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-stone-800">Assigned Shift *</label>
+                        <select
+                          value={formData.shiftTimingId}
+                          onChange={(e) => setFormData({ ...formData, shiftTimingId: e.target.value })}
+                          className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer font-medium"
+                        >
+                          {safeShifts.map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.code} — {s.name} ({s.startTime} - {s.endTime})
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </div>
                   </div>
-                </div>
-              </div>
+                )}
 
-              {/* Active / Inactive Employment Status Switch */}
-              <div
-                onClick={() => setFormData({ ...formData, isActive: !formData.isActive })}
-                className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
-                  formData.isActive
-                    ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950'
-                    : 'bg-rose-50/70 border-rose-300 text-rose-950'
-                }`}
-              >
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    {formData.isActive ? (
-                      <UserCheck className="w-4 h-4 text-emerald-600" />
-                    ) : (
-                      <UserX className="w-4 h-4 text-rose-600" />
-                    )}
-                    <span className="text-xs font-bold">
-                      {formData.isActive ? 'Active Employee Status' : 'Inactive / Suspended Status'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] opacity-80">
-                    {formData.isActive
-                      ? 'Employee is currently active in the organization directory.'
-                      : 'Account is locked. Employee cannot log in or record attendance.'}
-                  </p>
-                </div>
+                {/* TAB 2: ACCOUNT & ACCESS */}
+                {editModalTab === 'account' && (
+                  <div className="space-y-3.5 animate-in fade-in duration-150">
+                    {/* Credentials & System Role */}
+                    <div className="bg-white/90 border border-[#ded4c5] rounded-xl p-3.5 space-y-3">
+                      <div className="flex items-center justify-between border-b border-[#ded4c5]/60 pb-2">
+                        <label className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                          <Key className="w-4 h-4 text-stone-600" />
+                          <span>Employee Credentials & Code</span>
+                        </label>
+                        <span className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-semibold px-2 py-0.5 rounded">
+                          Access Security
+                        </span>
+                      </div>
 
-                <div
-                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 ease-in-out shrink-0 ${
-                    formData.isActive ? 'bg-emerald-600' : 'bg-stone-400'
-                  }`}
-                >
-                  <div
-                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
-                      formData.isActive ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-              </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-stone-700">Employee Code *</label>
+                          <input
+                            type="text"
+                            required
+                            value={formData.employeeCode}
+                            onChange={(e) => setFormData({ ...formData, employeeCode: e.target.value })}
+                            className="w-full bg-white border border-[#ded4c5] rounded-xl px-2.5 py-1.5 text-xs text-stone-900 font-mono focus:outline-hidden focus:border-stone-800"
+                          />
+                        </div>
 
-              {/* System Login Access Permission Toggle */}
-              <div
-                onClick={() => setFormData({ ...formData, canLogin: !formData.canLogin })}
-                className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
-                  formData.canLogin !== false
-                    ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950'
-                    : 'bg-rose-50/70 border-rose-300 text-rose-950'
-                }`}
-              >
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    {formData.canLogin !== false ? (
-                      <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                    ) : (
-                      <Ban className="w-4 h-4 text-rose-600" />
-                    )}
-                    <span className="text-xs font-bold">
-                      {formData.canLogin !== false ? 'System Login Allowed' : 'System Login Disabled'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] opacity-80">
-                    {formData.canLogin !== false
-                      ? 'Employee is authorized to log in and access SAATA.'
-                      : 'Employee cannot log in or use the system until enabled by HR.'}
-                  </p>
-                </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-stone-700">Username *</label>
+                            {formData.name && (
+                              <button
+                                type="button"
+                                onClick={() => handleAutoSuggestUsername(formData.name)}
+                                className="text-[10px] text-amber-700 hover:text-amber-900 font-semibold underline cursor-pointer flex items-center gap-0.5"
+                              >
+                                <Sparkles className="w-2.5 h-2.5" />
+                                <span>Auto</span>
+                              </button>
+                            )}
+                          </div>
+                          <div className="relative">
+                            <AtSign className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                            <input
+                              type="text"
+                              required
+                              value={formData.username}
+                              onChange={(e) =>
+                                setFormData({
+                                  ...formData,
+                                  username: e.target.value.toLowerCase().replace(/\s+/g, '.'),
+                                })
+                              }
+                              placeholder="e.g. jordan.m"
+                              className="w-full bg-white border border-[#ded4c5] rounded-xl pl-8 pr-2 py-1.5 text-xs text-stone-900 font-mono focus:outline-hidden focus:border-stone-800"
+                            />
+                          </div>
+                        </div>
 
-                <div
-                  className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 ease-in-out shrink-0 ${
-                    formData.canLogin !== false ? 'bg-emerald-600' : 'bg-stone-400'
-                  }`}
-                >
-                  <div
-                    className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
-                      formData.canLogin !== false ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
-                </div>
-              </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="text-xs font-bold text-stone-700">Password</label>
+                            <button
+                              type="button"
+                              onClick={handleGeneratePassword}
+                              className="text-[10px] text-amber-700 hover:text-amber-900 font-semibold underline cursor-pointer flex items-center gap-0.5"
+                            >
+                              <Sparkles className="w-2.5 h-2.5" />
+                              <span>Gen</span>
+                            </button>
+                          </div>
+                          <div className="relative">
+                            <Lock className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                            <input
+                              type={showPassword ? 'text' : 'password'}
+                              required
+                              value={formData.password}
+                              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                              placeholder="Password"
+                              className="w-full bg-white border border-[#ded4c5] rounded-xl pl-8 pr-7 py-1.5 text-xs text-stone-900 font-mono focus:outline-hidden focus:border-stone-800"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassword(!showPassword)}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer p-0.5"
+                            >
+                              {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
 
-              {/* 1-Device Hardware Binding Management */}
-              <div className="bg-stone-100/70 border border-[#ded4c5] rounded-xl p-3.5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
-                    <Smartphone className="w-4 h-4 text-stone-600" />
-                    <span>1-Device Hardware Binding</span>
-                  </label>
-                  <span className="text-[10px] bg-stone-200 text-stone-800 font-bold px-2 py-0.5 rounded">
-                    Strict 1:1 Security
-                  </span>
-                </div>
-                <p className="text-[11px] text-stone-600">
-                  Each employee account is locked to a single physical device. If the employee switches devices, HR must reset this lock.
-                </p>
-                <div className="bg-white rounded-lg p-2.5 border border-[#ded4c5] flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-xs font-semibold text-stone-900">
-                      {editingEmployee.deviceId ? (
-                        <span>Bound Device: <strong>{editingEmployee.deviceBinding?.deviceName || editingEmployee.deviceId}</strong></span>
-                      ) : (
-                        <span className="text-stone-500 italic">No hardware device bound yet (will auto-bind on next login)</span>
-                      )}
+                      <div className="space-y-1 pt-1">
+                        <label className="text-xs font-bold text-stone-700">System Access Role</label>
+                        <select
+                          value={formData.role}
+                          onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
+                          className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-1.5 text-xs text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer font-medium"
+                        >
+                          <option value="employee">Standard Employee</option>
+                          <option value="manager">Manager (Approver)</option>
+                          <option value="hr">HR Specialist</option>
+                          <option value="admin">Administrator</option>
+                        </select>
+                      </div>
                     </div>
-                    {editingEmployee.deviceBinding?.boundAt && (
-                      <div className="text-[10px] text-stone-500 font-mono">
-                        Bound on: {new Date(editingEmployee.deviceBinding.boundAt).toLocaleString()}
+
+                    {/* Status Toggles */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div
+                        onClick={() => setFormData({ ...formData, isActive: !formData.isActive })}
+                        className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
+                          formData.isActive
+                            ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950'
+                            : 'bg-rose-50/70 border-rose-300 text-rose-950'
+                        }`}
+                      >
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5">
+                            {formData.isActive ? (
+                              <UserCheck className="w-4 h-4 text-emerald-600" />
+                            ) : (
+                              <UserX className="w-4 h-4 text-rose-600" />
+                            )}
+                            <span className="text-xs font-bold">
+                              {formData.isActive ? 'Active Staff' : 'Inactive Staff'}
+                            </span>
+                          </div>
+                          <p className="text-[10px] opacity-80">
+                            {formData.isActive ? 'Mobile login & attendance enabled' : 'Profile locked'}
+                          </p>
+                        </div>
+
+                        <div
+                          className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out shrink-0 ${
+                            formData.isActive ? 'bg-emerald-600' : 'bg-stone-400'
+                          }`}
+                        >
+                          <div
+                            className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
+                              formData.isActive ? 'translate-x-4' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+
+                      <div
+                        onClick={() => setFormData({ ...formData, canLogin: !formData.canLogin })}
+                        className={`p-3 rounded-xl border transition-all cursor-pointer flex items-center justify-between ${
+                          formData.canLogin !== false
+                            ? 'bg-emerald-50/70 border-emerald-300 text-emerald-950'
+                            : 'bg-rose-50/70 border-rose-300 text-rose-950'
+                        }`}
+                      >
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5">
+                            {formData.canLogin !== false ? (
+                              <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                            ) : (
+                              <Ban className="w-4 h-4 text-rose-600" />
+                            )}
+                            <span className="text-xs font-bold">
+                              {formData.canLogin !== false ? 'Login Allowed' : 'Login Disabled'}
+                            </span>
+                          </div>
+                          <p className="text-[10px] opacity-80">
+                            {formData.canLogin !== false ? 'Authorized to sign in' : 'Access blocked'}
+                          </p>
+                        </div>
+
+                        <div
+                          className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors duration-200 ease-in-out shrink-0 ${
+                            formData.canLogin !== false ? 'bg-emerald-600' : 'bg-stone-400'
+                          }`}
+                        >
+                          <div
+                            className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${
+                              formData.canLogin !== false ? 'translate-x-4' : 'translate-x-0'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Hardware Binding Lock */}
+                    <div className="bg-stone-100/80 border border-[#ded4c5] rounded-xl p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
+                          <Smartphone className="w-4 h-4 text-stone-600" />
+                          <span>1-Device Hardware Binding</span>
+                        </label>
+                        <span className="text-[9px] bg-stone-200 text-stone-800 font-bold px-1.5 py-0.5 rounded">
+                          1:1 Security
+                        </span>
+                      </div>
+                      <div className="bg-white rounded-lg p-2.5 border border-[#ded4c5] flex items-center justify-between gap-2.5">
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-stone-900 truncate">
+                            {editingEmployee.deviceId ? (
+                              <span>Bound: <strong>{editingEmployee.deviceBinding?.deviceName || editingEmployee.deviceId}</strong></span>
+                            ) : (
+                              <span className="text-stone-500 italic text-[11px]">No device bound yet (auto-binds on login)</span>
+                            )}
+                          </div>
+                          {editingEmployee.deviceBinding?.boundAt && (
+                            <div className="text-[10px] text-stone-500 font-mono">
+                              Bound: {new Date(editingEmployee.deviceBinding.boundAt).toLocaleDateString()}
+                            </div>
+                          )}
+                        </div>
+                        {editingEmployee.deviceId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const res = resetEmployeeDeviceBinding(editingEmployee.id);
+                              showToast(res.message);
+                              setEditingEmployee({ ...editingEmployee, deviceId: null, deviceBinding: null });
+                            }}
+                            className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors shrink-0"
+                          >
+                            <RotateCcw className="w-3 h-3 text-amber-700" />
+                            <span>Reset Lock</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* TAB 3: JOINING & LEAVES */}
+                {editModalTab === 'leaves' && (
+                  <div className="space-y-3.5 animate-in fade-in duration-150">
+                    {/* Joining Date & Manager */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-stone-800 flex items-center justify-between">
+                          <span className="flex items-center gap-1">
+                            <Calendar className="w-3.5 h-3.5 text-amber-700" />
+                            <span>Date of Joining *</span>
+                          </span>
+                        </label>
+                        <input
+                          type="date"
+                          required
+                          value={formData.joinedDate}
+                          onChange={(e) => setFormData({ ...formData, joinedDate: e.target.value })}
+                          className="w-full bg-white border border-amber-300 rounded-xl px-3 py-1.5 text-xs text-stone-900 font-medium focus:outline-hidden focus:border-amber-600"
+                        />
+                      </div>
+
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-stone-800">Reporting Manager</label>
+                        <select
+                          value={formData.managerId}
+                          onChange={(e) => setFormData({ ...formData, managerId: e.target.value })}
+                          className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-1.5 text-xs text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer"
+                        >
+                          {safeEmployees
+                            .filter((e) => e.id !== editingEmployee.id)
+                            .map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name} ({m.role === 'manager' ? 'Manager' : m.department})
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Anniversary cycle card */}
+                    {formData.joinedDate && (
+                      <div className="bg-amber-50/70 border border-amber-200/80 rounded-xl p-3 flex items-center justify-between text-[11px] text-amber-950">
+                        {(() => {
+                          const cycle = calculateLeaveCycle(formData.joinedDate);
+                          return (
+                            <div className="flex items-center justify-between w-full">
+                              <div>
+                                <span className="font-semibold text-amber-900">Next Annual Refill: </span>
+                                <span className="font-mono font-bold text-stone-900">{cycle.nextAnniversaryDate}</span>
+                              </div>
+                              <div className="text-[10px] text-stone-600 font-medium">
+                                Service Tenure: {cycle.yearsOfService} {cycle.yearsOfService === 1 ? 'year' : 'years'}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
-                  </div>
-                  {editingEmployee.deviceId && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const res = resetEmployeeDeviceBinding(editingEmployee.id);
-                        showToast(res.message);
-                        setEditingEmployee({ ...editingEmployee, deviceId: null, deviceBinding: null });
-                      }}
-                      className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors shrink-0"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-amber-700" />
-                      <span>Reset Device Lock</span>
-                    </button>
-                  )}
-                </div>
-              </div>
 
-              {/* Login Credentials Box */}
-              <div className="bg-white/80 border border-[#ded4c5] rounded-xl p-3.5 space-y-3">
-                <div className="flex items-center justify-between border-b border-[#ded4c5]/60 pb-2">
-                  <label className="text-xs font-bold text-stone-800 flex items-center gap-1.5">
-                    <Key className="w-4 h-4 text-stone-600" />
-                    <span>Login Credentials & Password</span>
-                  </label>
-                  <span className="text-[10px] bg-amber-100 text-amber-900 border border-amber-300 font-semibold px-2 py-0.5 rounded">
-                    Employee Access
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Username */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-stone-700">Username *</label>
-                      {formData.name && (
+                    {/* Leave Balances Adjustments */}
+                    <div className="bg-white/90 border border-[#ded4c5] rounded-xl p-3.5 space-y-2.5">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-stone-800">Leave Balances (Days)</label>
                         <button
                           type="button"
-                          onClick={() => handleAutoSuggestUsername(formData.name)}
-                          className="text-[10px] text-stone-600 hover:text-stone-900 font-semibold underline cursor-pointer flex items-center gap-0.5"
+                          onClick={() => {
+                            const quota = getEmployeeAnnualQuota(
+                              { ...editingEmployee, gradeId: formData.gradeId },
+                              gradeDefinitions,
+                              leaveDefinitions
+                            );
+                            setFormData({
+                              ...formData,
+                              casualLeave: quota.casual,
+                              sickLeave: quota.sick,
+                              annualLeave: quota.annual,
+                            });
+                            showToast(`Reset leave inputs to Grade annual quota!`);
+                          }}
+                          className="text-[10px] text-amber-800 hover:text-amber-950 bg-amber-100/70 hover:bg-amber-100 border border-amber-300 px-2 py-0.5 rounded font-semibold cursor-pointer flex items-center gap-1 transition-colors"
                         >
-                          <Sparkles className="w-2.5 h-2.5 text-amber-600" />
-                          <span>Suggest</span>
+                          <RotateCcw className="w-3 h-3 text-amber-700" />
+                          <span>Reset to Grade Quota</span>
                         </button>
-                      )}
-                    </div>
-                    <div className="relative">
-                      <AtSign className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        required
-                        value={formData.username}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            username: e.target.value.toLowerCase().replace(/\s+/g, '.'),
-                          })
-                        }
-                        placeholder="e.g. jordan.miller"
-                        className="w-full bg-white border border-[#ded4c5] rounded-xl pl-8 pr-3 py-2 text-xs sm:text-sm text-stone-900 font-mono focus:outline-hidden focus:border-stone-800"
-                      />
-                    </div>
-                  </div>
+                      </div>
 
-                  {/* Password */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-stone-700">Password</label>
-                      <button
-                        type="button"
-                        onClick={handleGeneratePassword}
-                        className="text-[10px] text-stone-600 hover:text-stone-900 font-semibold underline cursor-pointer flex items-center gap-0.5"
-                      >
-                        <Sparkles className="w-2.5 h-2.5 text-amber-600" />
-                        <span>Reset/Generate</span>
-                      </button>
-                    </div>
-                    <div className="relative">
-                      <Lock className="w-3.5 h-3.5 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        required
-                        value={formData.password}
-                        onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                        placeholder="Enter new password"
-                        className="w-full bg-white border border-[#ded4c5] rounded-xl pl-8 pr-9 py-2 text-xs sm:text-sm text-stone-900 font-mono focus:outline-hidden focus:border-stone-800"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer p-0.5"
-                      >
-                        {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-stone-500 font-medium block">Casual Leave</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={formData.casualLeave}
+                            onChange={(e) => setFormData({ ...formData, casualLeave: Number(e.target.value) })}
+                            className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-1.5 text-xs text-stone-900 font-bold text-center"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-stone-500 font-medium block">Sick Leave</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={formData.sickLeave}
+                            onChange={(e) => setFormData({ ...formData, sickLeave: Number(e.target.value) })}
+                            className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-1.5 text-xs text-stone-900 font-bold text-center"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-stone-500 font-medium block">Annual PTO</span>
+                          <input
+                            type="number"
+                            min="0"
+                            value={formData.annualLeave}
+                            onChange={(e) => setFormData({ ...formData, annualLeave: Number(e.target.value) })}
+                            className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-1.5 text-xs text-stone-900 font-bold text-center"
+                          />
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Full Name *</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Employee Code</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.employeeCode}
-                    onChange={(e) => setFormData({ ...formData, employeeCode: e.target.value })}
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 font-mono focus:outline-hidden focus:border-stone-800"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Official Email</label>
-                  <input
-                    type="email"
-                    required
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Phone</label>
-                  <input
-                    type="text"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Department</label>
-                  <select
-                    value={formData.department}
-                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer"
-                  >
-                    <option value="Engineering">Engineering</option>
-                    <option value="Engineering & Product">Engineering & Product</option>
-                    <option value="Product Design">Product Design</option>
-                    <option value="Human Resources">Human Resources</option>
-                    <option value="Operations">Operations</option>
-                    <option value="Enterprise Sales">Enterprise Sales</option>
-                    <option value="Finance & Legal">Finance & Legal</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Designation</label>
-                  <input
-                    type="text"
-                    required
-                    value={formData.designation}
-                    onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800"
-                  />
-                </div>
-              </div>
-
-              {/* Assigned Job Grade */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-stone-700 flex items-center justify-between">
-                  <span>Assigned Job Grade *</span>
-                  <span className="text-[10px] text-stone-500 font-normal">Controls permitted leave types for this employee</span>
-                </label>
-                <select
-                  value={formData.gradeId}
-                  onChange={(e) => setFormData({ ...formData, gradeId: e.target.value })}
-                  className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer font-medium"
-                >
-                  {gradeDefinitions.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.gradeCode} — {g.gradeName} {g.gradeNameAr ? `(${g.gradeNameAr})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Assigned Work Schedule & Shift */}
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-stone-700 flex items-center justify-between">
-                  <span className="flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-stone-600" />
-                    <span>Assigned Work Schedule / Shift *</span>
-                  </span>
-                  <span className="text-[10px] text-stone-500 font-normal">Sets shift timings, work hours & late thresholds</span>
-                </label>
-                <select
-                  value={formData.shiftTimingId}
-                  onChange={(e) => setFormData({ ...formData, shiftTimingId: e.target.value })}
-                  className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer font-medium"
-                >
-                  {workSchedule.shifts.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.code} — {s.name} ({s.startTime} - {s.endTime}, {s.netWorkHours}h) {s.isFlexible ? '[Flexible]' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Role & Access Type</label>
-                  <select
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer"
-                  >
-                    <option value="employee">Standard Employee</option>
-                    <option value="manager">Manager (Approver)</option>
-                    <option value="hr">HR Employee (Directory Admin)</option>
-                    <option value="admin">Administrator</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-stone-700">Reporting Manager</label>
-                  <select
-                    value={formData.managerId}
-                    onChange={(e) => setFormData({ ...formData, managerId: e.target.value })}
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer"
-                  >
-                    {employees
-                      .filter((e) => e.id !== editingEmployee.id)
-                      .map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name} ({m.role === 'manager' ? 'Manager' : m.department})
-                        </option>
-                      ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Date of Joining & Work Anniversary Configuration */}
-              <div className="bg-amber-50/60 border border-amber-200/80 rounded-xl p-3.5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
-                    <Calendar className="w-4 h-4 text-amber-700" />
-                    <span>Date of Joining (Annual Refill Anchor) *</span>
-                  </label>
-                  <span className="text-[10px] bg-amber-200 text-amber-950 font-bold px-2 py-0.5 rounded">
-                    Anniversary Engine
-                  </span>
-                </div>
-                <p className="text-[11px] text-amber-900/80">
-                  Every year on this date, this employee's leaves automatically refill to their grade quota with <strong>no carry-over</strong>.
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                  <div>
-                    <input
-                      type="date"
-                      required
-                      value={formData.joinedDate}
-                      onChange={(e) => setFormData({ ...formData, joinedDate: e.target.value })}
-                      className="w-full bg-white border border-amber-300 rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 font-medium focus:outline-hidden focus:border-amber-600"
-                    />
-                  </div>
-                  {formData.joinedDate && (
-                    <div className="bg-white/80 border border-amber-200 rounded-xl px-3 py-1.5 flex flex-col justify-center text-[11px] text-amber-950">
-                      {(() => {
-                        const cycle = calculateLeaveCycle(formData.joinedDate);
-                        return (
-                          <div>
-                            <div className="font-semibold text-amber-900">
-                              Next Anniversary: <span className="font-mono text-stone-900">{cycle.nextAnniversaryDate}</span>
-                            </div>
-                            <div className="text-[10px] text-stone-600">
-                              Tenure: {cycle.yearsOfService} {cycle.yearsOfService === 1 ? 'year' : 'years'} completed
-                            </div>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Leave Balances Adjustments & Manual Refill */}
-              <div className="space-y-2 pt-1">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-stone-700">Leave Balances (Days)</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const quota = getEmployeeAnnualQuota(
-                        { ...editingEmployee, gradeId: formData.gradeId },
-                        gradeDefinitions,
-                        leaveDefinitions
-                      );
-                      setFormData({
-                        ...formData,
-                        casualLeave: quota.casual,
-                        sickLeave: quota.sick,
-                        annualLeave: quota.annual,
-                      });
-                      showToast(`Reset leave inputs to Grade annual quota!`);
-                    }}
-                    className="text-[11px] text-amber-800 hover:text-amber-950 bg-amber-100/70 hover:bg-amber-100 border border-amber-300 px-2 py-0.5 rounded font-semibold cursor-pointer flex items-center gap-1 transition-colors"
-                  >
-                    <RotateCcw className="w-3 h-3 text-amber-700" />
-                    <span>Reset to Annual Quota</span>
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <span className="text-[10px] text-stone-500 font-medium">Casual</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={formData.casualLeave}
-                      onChange={(e) => setFormData({ ...formData, casualLeave: Number(e.target.value) })}
-                      className="w-full bg-white border border-[#ded4c5] rounded-xl px-2.5 py-1.5 text-xs text-stone-900"
-                    />
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-stone-500 font-medium">Sick</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={formData.sickLeave}
-                      onChange={(e) => setFormData({ ...formData, sickLeave: Number(e.target.value) })}
-                      className="w-full bg-white border border-[#ded4c5] rounded-xl px-2.5 py-1.5 text-xs text-stone-900"
-                    />
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-stone-500 font-medium">Annual PTO</span>
-                    <input
-                      type="number"
-                      min="0"
-                      value={formData.annualLeave}
-                      onChange={(e) => setFormData({ ...formData, annualLeave: Number(e.target.value) })}
-                      className="w-full bg-white border border-[#ded4c5] rounded-xl px-2.5 py-1.5 text-xs text-stone-900"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#ded4c5]">
+              {/* Modal Footer */}
+              <div className="flex items-center justify-between gap-2 pt-3 border-t border-[#ded4c5] shrink-0">
                 <button
                   type="button"
                   onClick={() => setEditingEmployee(null)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-white hover:bg-[#ede4d6] text-stone-700 border border-[#ded4c5] cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-[#ede4d6] text-stone-700 border border-[#ded4c5] cursor-pointer transition-colors"
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-semibold bg-stone-900 hover:bg-stone-800 text-stone-50 shadow-xs cursor-pointer"
-                >
-                  Save Profile Changes
-                </button>
+
+                <div className="flex items-center gap-2">
+                  {editModalTab !== 'basic' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (editModalTab === 'leaves') setEditModalTab('account');
+                        else if (editModalTab === 'account') setEditModalTab('basic');
+                      }}
+                      className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-white hover:bg-[#ede4d6] text-stone-800 border border-[#ded4c5] cursor-pointer transition-colors"
+                    >
+                      ← Back
+                    </button>
+                  )}
+
+                  {editModalTab !== 'leaves' ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (editModalTab === 'basic') setEditModalTab('account');
+                        else if (editModalTab === 'account') setEditModalTab('leaves');
+                      }}
+                      className="px-4 py-1.5 rounded-xl text-xs font-bold bg-stone-900 hover:bg-stone-800 text-stone-50 shadow-2xs cursor-pointer transition-colors flex items-center gap-1"
+                    >
+                      <span>Next Step</span>
+                      <span>→</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      className="px-5 py-1.5 rounded-xl text-xs font-bold bg-stone-900 hover:bg-stone-800 text-stone-50 shadow-xs cursor-pointer transition-colors flex items-center gap-1"
+                    >
+                      <Save className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Save Profile Changes</span>
+                    </button>
+                  )}
+                </div>
               </div>
             </form>
           </div>
@@ -2639,7 +2882,7 @@ export const EmployeeDirectory: React.FC = () => {
 
             {/* Office Location Checkboxes */}
             <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-              {officeLocations.map((loc) => {
+              {safeLocations.map((loc) => {
                 const isSelected = selectedLocationIds.includes(loc.id);
                 return (
                   <button
@@ -2743,7 +2986,7 @@ export const EmployeeDirectory: React.FC = () => {
             <button
               type="button"
               onClick={() => {
-                setBulkSelectedShiftId(workSchedule.defaultShiftId || workSchedule.shifts[0]?.id || 'shift_general');
+                setBulkSelectedShiftId(workSchedule?.defaultShiftId || workSchedule?.shifts?.[0]?.id || 'shift_general');
                 setIsBulkShiftModalOpen(true);
               }}
               className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
@@ -2787,7 +3030,7 @@ export const EmployeeDirectory: React.FC = () => {
             <div className="space-y-2">
               <label className="text-xs font-bold text-stone-700 block">Select Work Shift:</label>
               <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                {workSchedule.shifts.map((s) => (
+                {safeShifts.map((s) => (
                   <button
                     key={s.id}
                     type="button"
@@ -2867,12 +3110,26 @@ export const EmployeeDirectory: React.FC = () => {
                 )}
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="font-extrabold text-stone-900 text-lg">{viewingEmployee.name}</h3>
+                    <h3 className="font-extrabold text-stone-900 text-lg">
+                      {viewingEmployee.name}
+                      {viewingEmployee.nameAr && (
+                        <span className="text-sm font-semibold text-amber-900/80 ml-2" dir="rtl">
+                          ({viewingEmployee.nameAr})
+                        </span>
+                      )}
+                    </h3>
                     <span className="text-xs font-mono text-stone-500 bg-white border border-[#ded4c5] px-2 py-0.5 rounded-md">
                       {viewingEmployee.employeeCode}
                     </span>
                   </div>
-                  <p className="text-xs font-bold text-stone-700">{viewingEmployee.designation || 'Staff Member'}</p>
+                  <p className="text-xs font-bold text-stone-700">
+                    {viewingEmployee.designation || 'Staff Member'}
+                    {viewingEmployee.designationAr && (
+                      <span className="text-xs font-medium text-stone-500 ml-1.5" dir="rtl">
+                        • {viewingEmployee.designationAr}
+                      </span>
+                    )}
+                  </p>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="px-2 py-0.5 bg-stone-900 text-amber-400 font-bold text-[10px] rounded-md uppercase tracking-wider">
                       {viewingEmployee.department}
@@ -2934,19 +3191,19 @@ export const EmployeeDirectory: React.FC = () => {
                 <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl">
                   <span className="text-[10px] font-bold text-amber-900 uppercase block">Casual</span>
                   <span className="text-base font-extrabold text-amber-950 font-mono">
-                    {viewingEmployee.leaveBalance?.casualRemaining ?? 0} / {viewingEmployee.annualLeaveAllowance?.casual ?? 10}
+                    {viewingEmployee.leaveBalance?.casual ?? 0} / {viewingEmployee.annualLeaveAllowance?.casual ?? 10}
                   </span>
                 </div>
                 <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl">
                   <span className="text-[10px] font-bold text-blue-900 uppercase block">Sick</span>
                   <span className="text-base font-extrabold text-blue-950 font-mono">
-                    {viewingEmployee.leaveBalance?.sickRemaining ?? 0} / {viewingEmployee.annualLeaveAllowance?.sick ?? 8}
+                    {viewingEmployee.leaveBalance?.sick ?? 0} / {viewingEmployee.annualLeaveAllowance?.sick ?? 8}
                   </span>
                 </div>
                 <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl">
                   <span className="text-[10px] font-bold text-emerald-900 uppercase block">Annual</span>
                   <span className="text-base font-extrabold text-emerald-950 font-mono">
-                    {viewingEmployee.leaveBalance?.annualRemaining ?? 0} / {viewingEmployee.annualLeaveAllowance?.annual ?? 15}
+                    {viewingEmployee.leaveBalance?.annual ?? 0} / {viewingEmployee.annualLeaveAllowance?.annual ?? 15}
                   </span>
                 </div>
               </div>

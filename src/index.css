@@ -1,1 +1,9 @@
 @import "tailwindcss";
+
+.font-arabic {
+  font-family: 'Cairo', system-ui, -apple-system, sans-serif !important;
+}
+
+[dir="rtl"] {
+  text-align: right;
+}

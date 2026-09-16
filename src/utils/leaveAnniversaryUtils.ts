@@ -23,10 +23,18 @@ export interface AnnualLeaveQuota {
  * Calculates default or grade-based annual quota for an employee
  */
 export function getEmployeeAnnualQuota(
-  employee: Employee,
+  employee?: Employee,
   gradeDefinitions?: GradeDefinition[],
   leaveDefinitions?: LeaveDefinition[]
 ): AnnualLeaveQuota {
+  if (!employee) {
+    return {
+      casual: 12,
+      sick: 10,
+      annual: 18,
+    };
+  }
+
   // If employee has a customized allowance configured, use it
   if (employee.annualLeaveAllowance) {
     return {

@@ -11,8 +11,13 @@ import {
   LogIn,
   LogOut,
   Sparkles,
+  ScanFace,
+  Fingerprint,
+  Smartphone,
+  WifiOff,
 } from 'lucide-react';
 import { PunchActionResult } from '../context/AttendanceContext';
+import { isHapticsSupported, hapticTap } from '../utils/haptics';
 
 export interface PunchFeedbackState extends PunchActionResult {
   type: 'success' | 'error';
@@ -128,10 +133,35 @@ export const PunchFeedbackCard: React.FC<PunchFeedbackCardProps> = ({
             </div>
           )}
 
+          {/* Offline Saved Badge */}
+          {isSuccess && feedback.isOfflineQueued && (
+            <div className="flex items-center justify-center gap-1.5 py-2 px-3 bg-amber-500 text-white rounded-xl text-[11px] font-bold shadow-xs">
+              <WifiOff className="w-3.5 h-3.5 animate-pulse shrink-0" />
+              <span>Saved Offline &bull; Will auto-sync when online</span>
+            </div>
+          )}
+
+          {/* Biometric Verification Badge */}
+          {isSuccess && feedback.biometricVerified && (
+            <div className="flex items-center justify-center gap-1.5 py-1.5 px-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] font-bold text-amber-900 shadow-2xs">
+              {feedback.biometricType === 'face' ? (
+                <ScanFace className="w-4 h-4 text-amber-700" />
+              ) : (
+                <Fingerprint className="w-4 h-4 text-amber-700" />
+              )}
+              <span>
+                Verified via {feedback.biometricType === 'face' ? 'Face ID' : 'Fingerprint'} Biometrics
+              </span>
+            </div>
+          )}
+
           {/* Action Close Button */}
           <button
             type="button"
-            onClick={onDismiss}
+            onClick={() => {
+              hapticTap();
+              onDismiss();
+            }}
             className={`w-full py-2.5 rounded-xl font-extrabold text-xs text-white shadow-sm transition-all cursor-pointer active:scale-98 ${
               !isSuccess
                 ? 'bg-rose-600 hover:bg-rose-700'

@@ -1,6 +1,14 @@
 import React, { useState, useMemo } from 'react';
 import { useAttendance } from '../context/AttendanceContext';
+import { useLanguage } from '../context/LanguageContext';
 import { checkGeofenceStatus, formatDistance, calculateExpectedOutTime } from '../utils/geoUtils';
+import {
+  hapticCheckInClick,
+  hapticCheckInSuccess,
+  hapticCheckOutClick,
+  hapticCheckOutSuccess,
+  hapticError,
+} from '../utils/haptics';
 import { GeofenceMap } from './GeofenceMap';
 import { WorkHoursBarChart } from './WorkHoursBarChart';
 import { PunchFeedbackCard, PunchFeedbackState } from './PunchFeedbackCard';
@@ -36,6 +44,7 @@ import {
   Printer,
   CalendarRange,
   RotateCcw,
+  ClipboardCheck,
 } from 'lucide-react';
 
 type TimeRangeOption =
@@ -49,6 +58,7 @@ type TimeRangeOption =
   | 'all';
 
 export const AttendanceView: React.FC = () => {
+  const { t, isRTL } = useLanguage();
   const {
     currentEmployee,
     employees,
@@ -158,7 +168,7 @@ export const AttendanceView: React.FC = () => {
           startOfWeek.setHours(0, 0, 0, 0);
           if (d < startOfWeek) return false;
         } else if (timeRange === 'this_month') {
-          const [recYear, recMonth] = rec.date.split('-').map(Number);
+          const [recYear, recMonth] = (rec.date || '').split('-').map(Number);
           if (recYear !== today.getFullYear() || recMonth !== today.getMonth() + 1) return false;
         } else if (timeRange === 'last_30_days') {
           const recDate = new Date(rec.date);
@@ -167,7 +177,7 @@ export const AttendanceView: React.FC = () => {
           if (recDate < thirtyDaysAgo) return false;
         } else if (timeRange === 'last_month') {
           const lastMonthDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-          const [recYear, recMonth] = rec.date.split('-').map(Number);
+          const [recYear, recMonth] = (rec.date || '').split('-').map(Number);
           if (recYear !== lastMonthDate.getFullYear() || recMonth !== lastMonthDate.getMonth() + 1) {
             return false;
           }
@@ -225,8 +235,12 @@ export const AttendanceView: React.FC = () => {
         totalHoursSum += r.workDurationMinutes / 60;
         recordsWithHours++;
       } else if (r.checkInTime && r.checkOutTime) {
-        const [inH, inM] = r.checkInTime.split(':').map(Number);
-        const [outH, outM] = r.checkOutTime.split(':').map(Number);
+        const inParts = r.checkInTime.split(':').map(Number);
+        const outParts = r.checkOutTime.split(':').map(Number);
+        const inH = inParts[0] || 0;
+        const inM = inParts[1] || 0;
+        const outH = outParts[0] || 0;
+        const outM = outParts[1] || 0;
         const diff = (outH + outM / 60) - (inH + inM / 60);
         if (diff > 0) {
           totalHoursSum += diff;
@@ -265,27 +279,35 @@ export const AttendanceView: React.FC = () => {
 
   // Web check-in direct actions
   const handleWebCheckIn = () => {
+    hapticCheckInClick();
     setPunchFeedback(null);
     const res = markCheckIn(punchNotes);
+    if (res.success) {
+      hapticCheckInSuccess();
+      setPunchNotes('');
+    } else {
+      hapticError();
+    }
     setPunchFeedback({
       type: res.success ? 'success' : 'error',
       ...res,
     });
-    if (res.success) {
-      setPunchNotes('');
-    }
   };
 
   const handleWebCheckOut = () => {
+    hapticCheckOutClick();
     setPunchFeedback(null);
     const res = markCheckOut(punchNotes);
+    if (res.success) {
+      hapticCheckOutSuccess();
+      setPunchNotes('');
+    } else {
+      hapticError();
+    }
     setPunchFeedback({
       type: res.success ? 'success' : 'error',
       ...res,
     });
-    if (res.success) {
-      setPunchNotes('');
-    }
   };
 
   // PDF Export functionality
@@ -333,16 +355,16 @@ export const AttendanceView: React.FC = () => {
 
     const tableRows = filteredRecords
       .map((r, index) => {
-        const [y, m, d] = r.date.split('-').map(Number);
-        const dateObj = new Date(y, m - 1, d);
-        const dateFormatted = isNaN(dateObj.getTime())
-          ? r.date
-          : dateObj.toLocaleDateString('en-US', {
+        const [y, m, d] = (r.date || '').split('-').map(Number);
+        const dateObj = (y && m && d) ? new Date(y, m - 1, d) : new Date();
+        const dateFormatted = !isNaN(dateObj.getTime())
+          ? dateObj.toLocaleDateString('en-US', {
               weekday: 'short',
               month: 'short',
               day: 'numeric',
               year: 'numeric',
-            });
+            })
+          : r.date;
 
         const statusStyle =
           r.status === 'on_time' || r.status === 'completed'
@@ -639,8 +661,8 @@ export const AttendanceView: React.FC = () => {
       return;
     }
 
-    const [y, m, d] = rec.date.split('-').map(Number);
-    const dateObj = new Date(y, m - 1, d);
+    const [y, m, d] = (rec.date || '').split('-').map(Number);
+    const dateObj = (y && m && d) ? new Date(y, m - 1, d) : new Date();
     const formattedDate = !isNaN(dateObj.getTime())
       ? dateObj.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
       : rec.date;
@@ -706,75 +728,80 @@ export const AttendanceView: React.FC = () => {
   const isCheckedIn = !!todayRecord?.checkInTime && !todayRecord?.checkOutTime;
 
   return (
-    <div id="attendance-main-view" className="max-w-7xl mx-auto space-y-6 pb-16">
-      {/* Top Header Card */}
-      <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-stone-600 bg-[#ede4d6] border border-[#ded4c5] px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
-              <Clock className="w-3 h-3 text-stone-700" />
-              <span>Attendance Management</span>
-            </span>
-            {isCurrentHR && (
-              <span className="text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-0.5 rounded-full">
-                HR / Admin Access
-              </span>
-            )}
+    <div id="attendance-main-view" className="max-w-7xl mx-auto space-y-4 pb-16">
+      {/* Main Page Title Banner Box */}
+      <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-xl px-3.5 py-2 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <ClipboardCheck className="w-4 h-4 text-stone-800 shrink-0" />
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-sm font-bold text-stone-900 leading-tight">
+                Attendance and Reports
+              </h1>
+              {isCurrentHR ? (
+                <span className="text-[9px] font-bold uppercase tracking-wider bg-stone-900 text-stone-100 px-1.5 py-0.5 rounded flex items-center gap-1 shadow-2xs shrink-0">
+                  <ShieldCheck className="w-2.5 h-2.5 text-amber-400" />
+                  <span>HR & Admin</span>
+                </span>
+              ) : (
+                <span className="text-[9px] font-bold uppercase tracking-wider bg-stone-200 text-stone-800 px-1.5 py-0.5 rounded flex items-center gap-1 shrink-0">
+                  <User className="w-2.5 h-2.5 text-stone-600" />
+                  <span>Personal Attendance</span>
+                </span>
+              )}
+            </div>
+            <p className="text-[11px] text-stone-600 truncate mt-0.5">
+              {isPersonalMode
+                ? 'Review daily shift hours, check-in and check-out logs, verified geofences, and monthly statements.'
+                : 'Monitor company-wide employee attendance logs, verify geofence punch accuracy, and export audit reports.'}
+            </p>
           </div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-stone-900 tracking-tight">
-            {isPersonalMode ? 'My Attendance & Shift Logs' : 'Company Attendance Master Logs'}
-          </h1>
-          <p className="text-xs sm:text-sm text-stone-600 font-medium">
-            {isPersonalMode
-              ? `Review your historical punches, geofence validations, and work hours logged for ${currentEmployee.name}.`
-              : 'Monitor enterprise attendance logs, real-time geofence punches, and shift hours across all company employees.'}
-          </p>
         </div>
 
-        {/* Action Controls on Top Right */}
-        <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
-          {/* HR Mode Switcher */}
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+          {/* HR View Mode Switcher (Compact - if HR/Admin) */}
           {isCurrentHR && (
-            <div className="flex items-center bg-[#ede4d6] p-1 rounded-xl border border-[#ded4c5] shadow-2xs">
+            <div className="flex items-center bg-white p-0.5 rounded-lg border border-[#ded4c5] shadow-2xs">
               <button
                 type="button"
                 id="hr-toggle-all-employees-btn"
                 onClick={() => setHrViewMode('all_employees')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
                   hrViewMode === 'all_employees'
                     ? 'bg-stone-900 text-white shadow-2xs'
                     : 'text-stone-700 hover:text-stone-900'
                 }`}
               >
-                <Users className="w-3.5 h-3.5" />
+                <Users className="w-3 h-3" />
                 <span>All Employees</span>
               </button>
               <button
                 type="button"
                 id="hr-toggle-my-attendance-btn"
                 onClick={() => setHrViewMode('my_attendance')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
                   hrViewMode === 'my_attendance'
                     ? 'bg-stone-900 text-white shadow-2xs'
                     : 'text-stone-700 hover:text-stone-900'
                 }`}
               >
-                <User className="w-3.5 h-3.5" />
+                <User className="w-3 h-3" />
                 <span>My Attendance</span>
               </button>
             </div>
           )}
 
-          {/* Export to PDF Report Button */}
+          {/* Top Export PDF Button */}
           <button
             type="button"
             id="export-attendance-pdf-top-btn"
             onClick={exportToPDF}
             disabled={filteredRecords.length === 0}
-            className="px-3.5 py-2 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-300 disabled:cursor-not-allowed text-stone-100 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer"
+            className="px-3 py-1 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-300 text-stone-100 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer shadow-2xs transition-colors"
+            title="Export statement as PDF"
           >
             <FileDown className="w-3.5 h-3.5 text-amber-300" />
-            <span>Export PDF Report ({filteredRecords.length})</span>
+            <span>Export Statement</span>
           </button>
         </div>
       </div>
@@ -1154,7 +1181,7 @@ export const AttendanceView: React.FC = () => {
                 className="w-full px-3 py-2 bg-[#fbf9f5] border border-[#ded4c5] rounded-xl text-xs text-stone-800 font-medium focus:outline-none focus:ring-1 focus:ring-stone-800 cursor-pointer"
               >
                 <option value="all">All Office Branches</option>
-                {officeLocations.map((loc) => (
+                {(officeLocations || []).map((loc) => (
                   <option key={loc.id} value={loc.id}>
                     {loc.name}
                   </option>

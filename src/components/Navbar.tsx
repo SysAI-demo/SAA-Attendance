@@ -19,6 +19,9 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => {
   const {
     currentEmployee,
+    employees,
+    setCurrentEmployeeId,
+    setIsAuthenticated,
     leaveRequests,
     permissionRequests,
     isMobileDeviceView,
@@ -39,8 +42,8 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => 
               <Clock className="w-4 h-4 text-white" />
             </div>
             <div>
-              <span className="font-bold text-sm tracking-tight text-white block">
-                SAATA
+              <span className="font-bold text-xs sm:text-sm tracking-tight text-white block">
+                SAA Time & Attendance
               </span>
             </div>
           </div>
@@ -122,17 +125,31 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, setCurrentTab }) => 
 
           {/* Active User Switcher */}
           <div className="flex items-center gap-2 shrink-0">
-            {/* Authenticated User Badge */}
-            <div className="relative flex items-center gap-2 bg-slate-800/90 border border-slate-700/80 px-2.5 py-1.5 rounded-xl shadow-inner">
+            {/* Authenticated User Badge & Switcher */}
+            <div className="relative flex items-center gap-2 bg-slate-800/90 border border-slate-700/80 px-2.5 py-1 rounded-xl shadow-inner">
               <img
                 src={currentEmployee.avatar}
                 alt={currentEmployee.name}
-                className="w-7 h-7 rounded-full object-cover border border-indigo-500"
+                className="w-7 h-7 rounded-full object-cover border border-indigo-500 shrink-0"
               />
-              <div className="text-left">
-                <span className="text-xs font-bold text-white block leading-none">{currentEmployee.name}</span>
-                <span className="text-[10px] text-slate-400 capitalize">
-                  {currentEmployee.role === 'manager' ? '⚡ Manager & Approver' : currentEmployee.role === 'hr' || currentEmployee.role === 'admin' ? '🛡️ Administrator' : '👤 Employee'}
+              <div className="text-left min-w-0">
+                <select
+                  value={currentEmployee.id}
+                  onChange={(e) => {
+                    setCurrentEmployeeId(e.target.value);
+                    setIsAuthenticated(true);
+                  }}
+                  className="text-xs font-bold text-white bg-transparent border-none outline-none cursor-pointer p-0 pr-1 hover:text-amber-300 transition-colors max-w-[130px] sm:max-w-[180px] truncate"
+                  title="Switch Active Logged In Account"
+                >
+                  {employees.map((emp) => (
+                    <option key={emp.id} value={emp.id} className="bg-slate-900 text-white font-medium">
+                      {emp.name} ({emp.role === 'admin' ? 'HR Admin' : emp.role === 'hr' ? 'HR' : emp.role === 'manager' ? 'Manager' : 'Staff'})
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[10px] text-slate-400 capitalize block leading-tight">
+                  {currentEmployee.role === 'manager' ? '⚡ Manager & Approver' : currentEmployee.role === 'hr' || currentEmployee.role === 'admin' ? '🛡️ HR Administrator' : '👤 Employee'}
                 </span>
               </div>
             </div>

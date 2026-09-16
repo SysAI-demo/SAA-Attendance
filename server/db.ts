@@ -42,6 +42,7 @@ import {
 export interface DatabaseSchema {
   version: number;
   lastUpdated: string;
+  isWiped?: boolean;
   employees: Employee[];
   locations: OfficeLocation[];
   attendance: AttendanceRecord[];
@@ -90,6 +91,64 @@ class ServerDatabase {
         const parsed = JSON.parse(raw);
         if (parsed && Array.isArray(parsed.employees)) {
           console.log(`[ServerDB] Successfully loaded database with ${parsed.employees.length} employees and ${parsed.attendance?.length || 0} records.`);
+          parsed.employees = parsed.employees.map((emp: any) => {
+            if (emp.id === 'emp_01' || (emp.name && emp.name.toLowerCase().includes('danish khan'))) {
+              return {
+                ...emp,
+                role: 'hr',
+                department: 'Human Resources',
+                designation: emp.designation === 'Senior Full Stack Engineer' ? 'HR Specialist' : (emp.designation || 'HR Specialist'),
+                designationAr: emp.designationAr || 'أخصائي الموارد البشرية',
+              };
+            }
+            return emp;
+          });
+          // Ensure locations are always populated with valid office geofences
+          if (!parsed.locations || !Array.isArray(parsed.locations) || parsed.locations.length === 0) {
+            parsed.locations = [DEFAULT_HQ_LOCATION, ...INITIAL_OFFICE_LOCATIONS.filter((l) => l.id !== DEFAULT_HQ_LOCATION.id)];
+          }
+
+          // Ensure definitions are always fully populated
+          if (!parsed.definitions || !parsed.definitions.leaves || !Array.isArray(parsed.definitions.leaves) || parsed.definitions.leaves.length === 0) {
+            parsed.definitions = {
+              leaves: INITIAL_LEAVE_DEFINITIONS,
+              permissions: INITIAL_PERMISSION_DEFINITIONS,
+              grades: INITIAL_GRADE_DEFINITIONS,
+              taPolicy: parsed.definitions?.taPolicy && parsed.definitions.taPolicy.shiftStartTime ? parsed.definitions.taPolicy : INITIAL_TA_POLICY,
+              holidays: INITIAL_HOLIDAY_DEFINITIONS,
+              workSchedule: parsed.definitions?.workSchedule && parsed.definitions.workSchedule.shifts?.length ? parsed.definitions.workSchedule : INITIAL_WORK_SCHEDULE,
+            };
+          }
+
+          // Ensure operational sample records are populated ONLY IF database has not been explicitly wiped for launch
+          if (!parsed.isWiped) {
+            if (!parsed.attendance || !Array.isArray(parsed.attendance) || parsed.attendance.length === 0) {
+              parsed.attendance = INITIAL_ATTENDANCE;
+            }
+            if (!parsed.leaves || !Array.isArray(parsed.leaves) || parsed.leaves.length === 0) {
+              parsed.leaves = INITIAL_LEAVE_REQUESTS;
+            }
+            if (!parsed.permissions || !Array.isArray(parsed.permissions) || parsed.permissions.length === 0) {
+              parsed.permissions = INITIAL_PERMISSION_REQUESTS;
+            }
+            if (!parsed.activityLogs || !Array.isArray(parsed.activityLogs) || parsed.activityLogs.length === 0) {
+              parsed.activityLogs = INITIAL_ACTIVITY_LOGS;
+            }
+            if (!parsed.notifications || !Array.isArray(parsed.notifications) || parsed.notifications.length === 0) {
+              parsed.notifications = INITIAL_NOTIFICATIONS;
+            }
+          } else {
+            parsed.attendance = parsed.attendance || [];
+            parsed.leaves = parsed.leaves || [];
+            parsed.permissions = parsed.permissions || [];
+            parsed.activityLogs = parsed.activityLogs || [];
+            parsed.notifications = parsed.notifications || [];
+          }
+          if (!parsed.deviceBindings || typeof parsed.deviceBindings !== 'object') {
+            parsed.deviceBindings = {};
+          }
+
+          this.saveToDiskSync(parsed);
           return parsed;
         }
       }
@@ -183,12 +242,16 @@ class ServerDatabase {
   public broadcast(type: string, payload: any) {
     this.queueSave();
     const event = { type, payload };
+    const droppedClients: ((event: { type: string; payload: any }) => void)[] = [];
     for (const send of this.sseClients) {
       try {
         send(event);
       } catch {
-        // client may have dropped
+        droppedClients.push(send);
       }
+    }
+    for (const dropped of droppedClients) {
+      this.sseClients.delete(dropped);
     }
   }
 
@@ -432,6 +495,7 @@ class ServerDatabase {
 
   // Complete clean system wipe (retains primary HR admin for immediate login & user creation)
   public wipeAllData() {
+    this.data.isWiped = true;
     this.data.employees = [DEFAULT_HR_ADMIN_USER];
     this.data.locations = [DEFAULT_HQ_LOCATION];
     this.data.attendance = [];

@@ -1,12 +1,22 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAttendance } from '../context/AttendanceContext';
+import { useLanguage } from '../context/LanguageContext';
+import { LanguageSwitcher } from './LanguageSwitcher';
 import { checkGeofenceStatus, formatDistance, calculateExpectedOutTime } from '../utils/geoUtils';
 import { getEmployeeAnnualQuota } from '../utils/leaveAnniversaryUtils';
+import {
+  hapticCheckInClick,
+  hapticCheckInSuccess,
+  hapticCheckOutClick,
+  hapticCheckOutSuccess,
+  hapticBiometricScan,
+  hapticBiometricSuccess,
+  hapticError,
+} from '../utils/haptics';
 import { WorkHoursBarChart } from './WorkHoursBarChart';
 import { PunchFeedbackCard, PunchFeedbackState } from './PunchFeedbackCard';
-import { PermissionType, LeaveType, LeaveDurationOption, AppNotification } from '../types';
+import { PermissionType, LeaveType, LeaveDurationOption, AppNotification, OfficeLocation } from '../types';
 import { GeofenceMap } from './GeofenceMap';
-import { LocationPermissionPrompt } from './LocationPermissionPrompt';
 import confetti from 'canvas-confetti';
 import {
   Clock,
@@ -46,6 +56,7 @@ import {
   FileDown,
   Download,
   Printer,
+  Globe,
   Bell,
   CheckCheck,
   Home,
@@ -107,7 +118,24 @@ interface EmployeeMobileAppProps {
 
 export type MobileAppTab = 'home' | 'attendance' | 'apply' | 'logs' | 'settings';
 
+// Fallback office definition if no offices are configured yet
+const DEFAULT_OFFICE_FALLBACK: OfficeLocation = {
+  id: 'loc_hq',
+  name: 'Sharjah Archaeology HQ',
+  code: 'HQ-SHJ',
+  address: 'Archaeology Complex, Al Abar, Sharjah, UAE',
+  city: 'Sharjah',
+  latitude: 25.3463,
+  longitude: 55.4209,
+  radiusMeters: 200,
+  timezone: 'Asia/Dubai',
+  color: '#eab308',
+  description: 'Main Headquarters',
+  isActive: true,
+};
+
 export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchToAdminPortal }) => {
+  const { t, isRTL } = useLanguage();
   const {
     currentEmployee,
     officeLocations,
@@ -140,6 +168,9 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
     markAllNotificationsAsRead,
     refreshGPSPosition,
     updateOfficeLocation,
+    triggerTestProximityAlert,
+    pushNotificationPermission,
+    requestPushNotificationPermission,
   } = useAttendance();
 
   // GPS Radar & Refresh state
@@ -166,25 +197,39 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
 
   const handleCalibrateOfficeToMyGPS = () => {
     if (!detectedOffice) return;
-    const confirm = window.confirm(
-      `Set "${detectedOffice.name}" GPS coordinates to your current position (${currentCoords.latitude.toFixed(5)}, ${currentCoords.longitude.toFixed(5)})?`
+    updateOfficeLocation(
+      {
+        ...detectedOffice,
+        latitude: currentCoords.latitude,
+        longitude: currentCoords.longitude,
+      },
+      true
     );
-    if (confirm) {
-      updateOfficeLocation(
-        {
-          ...detectedOffice,
-          latitude: currentCoords.latitude,
-          longitude: currentCoords.longitude,
-        },
-        true
-      );
-      setGpsRefreshMessage(`Calibrated ${detectedOffice.name} to your live GPS coordinates!`);
-      setTimeout(() => setGpsRefreshMessage(null), 4000);
-    }
+    setGpsRefreshMessage(`Geofence Updated: "${detectedOffice.name}" calibrated to your phone's live coordinates (${currentCoords.latitude.toFixed(4)}, ${currentCoords.longitude.toFixed(4)})!`);
+    setTimeout(() => setGpsRefreshMessage(null), 4500);
   };
 
   // Active Bottom Navigation Tab
-  const [activeTab, setActiveTab] = useState<MobileAppTab>('home');
+  const [activeTab, setActiveTabState] = useState<MobileAppTab>(() => {
+    try {
+      const saved = localStorage.getItem('saata_mobile_tab_v1') as MobileAppTab;
+      if (saved && ['home', 'attendance', 'apply', 'logs', 'settings'].includes(saved)) {
+        return saved;
+      }
+    } catch {
+      // ignore
+    }
+    return 'home';
+  });
+
+  const setActiveTab = (tab: MobileAppTab) => {
+    setActiveTabState(tab);
+    try {
+      localStorage.setItem('saata_mobile_tab_v1', tab);
+    } catch {
+      // ignore
+    }
+  };
   const [showNotificationsModal, setShowNotificationsModal] = useState<boolean>(false);
   const [notificationCategoryFilter, setNotificationCategoryFilter] = useState<'all' | 'approvals' | 'unread'>('all');
 
@@ -247,8 +292,17 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
   const [showBiometricModal, setShowBiometricModal] = useState<boolean>(false);
   const [biometricScanning, setBiometricScanning] = useState<boolean>(false);
   const [biometricSuccess, setBiometricSuccess] = useState<boolean>(false);
-  const [biometricType, setBiometricType] = useState<'fingerprint' | 'face'>('fingerprint');
+  const [biometricType, setBiometricType] = useState<'fingerprint' | 'face'>(() => {
+    return (localStorage.getItem('saata_biometric_type') as 'fingerprint' | 'face') || 'face';
+  });
   const [biometricStatusMsg, setBiometricStatusMsg] = useState<string>('');
+
+  // Active Punch Biometric/Face ID Verification State
+  const [showFacePunchModal, setShowFacePunchModal] = useState<boolean>(false);
+  const [pendingPunchType, setPendingPunchType] = useState<'check_in' | 'check_out'>('check_in');
+  const [facePunchScanning, setFacePunchScanning] = useState<boolean>(false);
+  const [facePunchSuccess, setFacePunchSuccess] = useState<boolean>(false);
+  const [facePunchStatusMsg, setFacePunchStatusMsg] = useState<string>('');
 
   const handleToggleBiometric = () => {
     if (!biometricEnabled) {
@@ -267,9 +321,12 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
     setBiometricType(type);
     setBiometricScanning(true);
     setBiometricSuccess(false);
-    setBiometricStatusMsg(type === 'fingerprint' ? 'Scanning fingerprint sensor...' : 'Scanning facial geometry...');
+    setBiometricStatusMsg(type === 'fingerprint' ? 'Scanning fingerprint sensor...' : 'Scanning 3D facial contours...');
 
     setTimeout(() => {
+      if (typeof navigator !== 'undefined' && navigator.vibrate) {
+        navigator.vibrate([40, 60, 40]);
+      }
       setBiometricScanning(false);
       setBiometricSuccess(true);
       setBiometricStatusMsg(
@@ -278,6 +335,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
           : 'Face ID registered successfully!'
       );
 
+      localStorage.setItem('saata_biometric_type', type);
       if (currentEmployee) {
         localStorage.setItem(`saata_biometric_enabled_${currentEmployee.id}`, 'true');
         localStorage.setItem('saata_biometric_enabled', 'true');
@@ -285,12 +343,11 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
         localStorage.setItem('saata_biometric_pass', currentEmployee.password || 'password123');
       }
       setBiometricEnabled(true);
-    }, 1400);
+    }, 1200);
   };
 
   // Time ticker
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [punchNotes, setPunchNotes] = useState('');
   const [punchFeedback, setPunchFeedback] = useState<PunchFeedbackState | null>(null);
 
   // Permission Application Form State
@@ -335,20 +392,24 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
 
   // Compute live geofence verification
   const geofenceResult = useMemo(() => {
-    const allowedIds = currentEmployee.allowedLocationIds || (officeLocations || []).map((l) => l.id);
+    const allowedIds = currentEmployee?.allowedLocationIds || (officeLocations || []).map((l) => l.id);
     return checkGeofenceStatus(currentCoords, officeLocations || [], allowedIds);
-  }, [currentCoords, officeLocations, currentEmployee.allowedLocationIds]);
+  }, [currentCoords, officeLocations, currentEmployee?.allowedLocationIds]);
 
   // Automatically detected office based on live GPS position
   const detectedOffice = useMemo(() => {
-    return geofenceResult?.activeAuthorizedLocation || geofenceResult?.nearestLocation || (officeLocations || [])[0];
+    return (
+      geofenceResult?.activeAuthorizedLocation ||
+      geofenceResult?.nearestLocation ||
+      (officeLocations && officeLocations.length > 0 ? officeLocations[0] : DEFAULT_OFFICE_FALLBACK)
+    );
   }, [geofenceResult, officeLocations]);
 
   // Find employee's assigned grade definition if available
   const employeeGrade = useMemo(() => {
-    if (!currentEmployee.gradeId || !gradeDefinitions) return undefined;
-    return gradeDefinitions.find((g) => g.id === currentEmployee.gradeId);
-  }, [currentEmployee.gradeId, gradeDefinitions]);
+    if (!currentEmployee?.gradeId || !gradeDefinitions) return undefined;
+    return gradeDefinitions.find((g) => g.id === currentEmployee?.gradeId);
+  }, [currentEmployee?.gradeId, gradeDefinitions]);
 
   // Filter leave types allowed by the employee's grade
   const allowedLeaveDefs = useMemo(() => {
@@ -362,12 +423,14 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
 
   // Filter my requests
   const myPermissions = useMemo(() => {
-    return permissionRequests.filter((r) => r.employeeId === currentEmployee.id);
-  }, [permissionRequests, currentEmployee.id]);
+    if (!currentEmployee?.id) return [];
+    return (permissionRequests || []).filter((r) => r.employeeId === currentEmployee.id);
+  }, [permissionRequests, currentEmployee?.id]);
 
   const myLeaves = useMemo(() => {
-    return leaveRequests.filter((r) => r.employeeId === currentEmployee.id);
-  }, [leaveRequests, currentEmployee.id]);
+    if (!currentEmployee?.id) return [];
+    return (leaveRequests || []).filter((r) => r.employeeId === currentEmployee.id);
+  }, [leaveRequests, currentEmployee?.id]);
 
   // HR Annual Quota & Allowed Leave Allocations
   const hrAnnualQuota = useMemo(() => {
@@ -376,8 +439,8 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
 
   // Detailed Annual Leave stats (Balance vs HR Allowance)
   const annualLeaveStats = useMemo(() => {
-    const totalAllowed = hrAnnualQuota.annual || 21;
-    const available = currentEmployee.leaveBalance?.annual ?? totalAllowed;
+    const totalAllowed = hrAnnualQuota?.annual || 21;
+    const available = currentEmployee?.leaveBalance?.annual ?? totalAllowed;
     const used = Math.max(0, totalAllowed - available);
     const percentLeft = totalAllowed > 0 ? Math.min(100, Math.max(0, Math.round((available / totalAllowed) * 100))) : 100;
 
@@ -387,7 +450,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
       used,
       percentLeft,
     };
-  }, [hrAnnualQuota, currentEmployee.leaveBalance]);
+  }, [hrAnnualQuota, currentEmployee?.leaveBalance]);
 
   // HR Monthly Permission Hours Allowance & Usage Calculation
   const hrMonthlyPermissionCap = useMemo(() => {
@@ -425,10 +488,11 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
 
   // Calculate my attendance logs
   const myAttendance = useMemo(() => {
-    return attendanceRecords
+    if (!currentEmployee?.id) return [];
+    return (attendanceRecords || [])
       .filter((rec) => rec.employeeId === currentEmployee.id)
       .sort((a, b) => b.date.localeCompare(a.date));
-  }, [attendanceRecords, currentEmployee.id]);
+  }, [attendanceRecords, currentEmployee?.id]);
 
   // Filtered my attendance logs by date range (From Date / To Date) for Tab 2 Attendance view
   const filteredMyAttendance = useMemo(() => {
@@ -465,11 +529,11 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
   const filteredActivityLogs = useMemo(() => {
     return myActivityLogs.filter((log) => {
       const cat = log.category || '';
-      const typ = log.type || '';
+      const typ = (log.type as string) || '';
       const matchCategory =
         logActivityCategory === 'all' ||
         cat === logActivityCategory ||
-        (logActivityCategory === 'auth' && (typ === 'auth' || cat === 'auth' || typ.includes('auth') || typ.includes('biometric'))) ||
+        (logActivityCategory === 'auth' && (cat === 'auth' || typ.includes('auth') || typ.includes('biometric') || typ.includes('security'))) ||
         (logActivityCategory === 'punch' && (cat === 'punch' || typ === 'check_in' || typ === 'check_out')) ||
         (logActivityCategory === 'leave' && (cat === 'leave' || typ.includes('leave'))) ||
         (logActivityCategory === 'permission' && (cat === 'permission' || typ.includes('permission')));
@@ -507,7 +571,8 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `activity_logs_${currentEmployee.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`;
+    const safeEmpName = (currentEmployee?.name || 'Employee').replace(/\s+/g, '_');
+    link.download = `activity_logs_${safeEmpName}_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -523,7 +588,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
   }, [myPermissions]);
 
   const myPendingLeavesCount = useMemo(() => {
-    return myLeaves.filter((r) => r.status === 'pending' || r.status === 'pending_hr').length;
+    return myLeaves.filter((r) => r.status === 'pending' || r.currentStage === 'pending_hr').length;
   }, [myLeaves]);
 
   // HR & Manager Approval Notifications for Home Dashboard highlights and filtered modal views
@@ -560,12 +625,98 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
     return 'Good Evening';
   }, [currentTime]);
 
+  // Execute final punch to database
+  const executeFinalPunch = (type: 'check_in' | 'check_out', biometricVerified: boolean = false) => {
+    if (!geofenceResult.activeAuthorizedLocation) {
+      hapticError();
+      return;
+    }
+    const locationName = geofenceResult.activeAuthorizedLocation.name;
+
+    if (type === 'check_in') {
+      const result = markCheckIn('', { biometricVerified, biometricType });
+      if (result.success) {
+        hapticCheckInSuccess();
+        setPunchFeedback({
+          ...result,
+          type: 'success',
+          punchType: 'check_in',
+          locationName,
+          message: `Check-IN Successful! Logged at ${locationName}.`,
+        });
+      } else {
+        hapticError();
+        setPunchFeedback({
+          ...result,
+          type: 'error',
+          punchType: 'check_in',
+          message: result.message,
+        });
+      }
+    } else {
+      const result = markCheckOut('', { biometricVerified, biometricType });
+      if (result.success) {
+        hapticCheckOutSuccess();
+        setPunchFeedback({
+          ...result,
+          type: 'success',
+          punchType: 'check_out',
+          locationName,
+          message: `Check-OUT Successful! Verified at ${locationName}.`,
+        });
+      } else {
+        hapticError();
+        setPunchFeedback({
+          ...result,
+          type: 'error',
+          punchType: 'check_out',
+          message: result.message,
+        });
+      }
+    }
+  };
+
+  // Trigger Biometric Verification Scan for Punch In/Out
+  const triggerBiometricPunchScan = (type: 'check_in' | 'check_out') => {
+    setPendingPunchType(type);
+    setShowFacePunchModal(true);
+    setFacePunchScanning(true);
+    setFacePunchSuccess(false);
+    hapticBiometricScan();
+    setFacePunchStatusMsg(
+      biometricType === 'face'
+        ? `Align face with frame to verify ${type === 'check_in' ? 'Check-In' : 'Check-Out'}...`
+        : `Place finger on sensor to verify ${type === 'check_in' ? 'Check-In' : 'Check-Out'}...`
+    );
+
+    setTimeout(() => {
+      hapticBiometricSuccess();
+      setFacePunchScanning(false);
+      setFacePunchSuccess(true);
+      setFacePunchStatusMsg(
+        biometricType === 'face'
+          ? `Face ID Verified: ${currentEmployee?.name}`
+          : `Fingerprint Match: ${currentEmployee?.name}`
+      );
+
+      setTimeout(() => {
+        setShowFacePunchModal(false);
+        executeFinalPunch(type, true);
+      }, 700);
+    }, 1100);
+  };
+
   // Handle Punch In Action
   const handlePunchIn = async () => {
+    // Immediate tactile click vibration for button press confirmation
+    hapticCheckInClick();
+
     if (locationPermissionStatus !== 'granted' || !hasAcquiredRealGPS) {
       const locRes = await requestLocationPermission();
       if (!locRes.success) {
+        hapticError();
         setPunchFeedback({
+          success: false,
           type: 'error',
           punchType: 'check_in',
           message: locRes.error || 'Check-in rejected! Please allow device location permission to verify your office geofence.',
@@ -575,7 +726,9 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
     }
 
     if (!geofenceResult.isInAllowedGeofence || !geofenceResult.activeAuthorizedLocation) {
+      hapticError();
       setPunchFeedback({
+        success: false,
         type: 'error',
         punchType: 'check_in',
         message: geofenceResult.statusMessage || `Check-in rejected! You are not inside any authorized office geofence.`,
@@ -583,30 +736,22 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
       return;
     }
 
-    const result = markCheckIn(punchNotes);
-    if (result.success) {
-      setPunchFeedback({
-        ...result,
-        type: 'success',
-        punchType: 'check_in',
-        locationName: geofenceResult.activeAuthorizedLocation.name,
-        message: `Check-IN Successful! Logged at ${geofenceResult.activeAuthorizedLocation.name}.`,
-      });
-      setPunchNotes('');
+    if (biometricEnabled) {
+      triggerBiometricPunchScan('check_in');
     } else {
-      setPunchFeedback({
-        ...result,
-        type: 'error',
-        punchType: 'check_in',
-        message: result.message,
-      });
+      executeFinalPunch('check_in', false);
     }
   };
 
   // Handle Punch Out Action
   const handlePunchOut = () => {
+    // Immediate tactile click vibration for button press confirmation
+    hapticCheckOutClick();
+
     if (!geofenceResult.isInAllowedGeofence || !geofenceResult.activeAuthorizedLocation) {
+      hapticError();
       setPunchFeedback({
+        success: false,
         type: 'error',
         punchType: 'check_out',
         message: geofenceResult.statusMessage || `Check-out rejected! You are outside authorized office geofence boundary.`,
@@ -614,23 +759,10 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
       return;
     }
 
-    const result = markCheckOut(punchNotes);
-    if (result.success) {
-      setPunchFeedback({
-        ...result,
-        type: 'success',
-        punchType: 'check_out',
-        locationName: geofenceResult.activeAuthorizedLocation.name,
-        message: `Check-OUT Successful! Verified at ${geofenceResult.activeAuthorizedLocation.name}.`,
-      });
-      setPunchNotes('');
+    if (biometricEnabled) {
+      triggerBiometricPunchScan('check_out');
     } else {
-      setPunchFeedback({
-        ...result,
-        type: 'error',
-        punchType: 'check_out',
-        message: result.message,
-      });
+      executeFinalPunch('check_out', false);
     }
   };
 
@@ -785,8 +917,8 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
         <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
           <div className="relative shrink-0">
             <img
-              src={currentEmployee.avatar}
-              alt={currentEmployee.name}
+              src={currentEmployee?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80'}
+              alt={currentEmployee?.name || 'Employee'}
               className="w-10 h-10 rounded-full object-cover border-2 border-stone-700 shadow-xs"
             />
             <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-stone-900" />
@@ -794,7 +926,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 flex-wrap">
               <h1 className="text-xs font-extrabold text-stone-100 truncate tracking-tight">
-                {currentEmployee.name}
+                {currentEmployee?.name || 'Employee'}
               </h1>
               {employeeGrade && (
                 <span
@@ -806,9 +938,9 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
               )}
             </div>
             <div className="text-[10px] text-stone-400 truncate flex items-center gap-1">
-              <span className="font-mono">{currentEmployee.employeeCode}</span>
+              <span className="font-mono">{currentEmployee?.employeeCode || 'EMP-000'}</span>
               <span>•</span>
-              <span className="truncate">{currentEmployee.designation}</span>
+              <span className="truncate">{currentEmployee?.designation || 'Staff'}</span>
             </div>
           </div>
         </div>
@@ -842,17 +974,6 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                 {unreadNotificationCount}
               </span>
             )}
-          </button>
-
-          {/* Log Out */}
-          <button
-            type="button"
-            id="mobile-logout-btn"
-            onClick={logout}
-            title="Log Out"
-            className="p-2 bg-stone-800 hover:bg-rose-950/70 text-stone-400 hover:text-rose-300 rounded-xl transition-colors cursor-pointer active:scale-95 border border-stone-700"
-          >
-            <LogOut className="w-4 h-4" />
           </button>
         </div>
       </header>
@@ -940,7 +1061,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                     </span>
                   </div>
                   <h2 className="text-xs sm:text-sm font-extrabold text-stone-50 tracking-tight truncate">
-                    {greeting}, {currentEmployee.name.split(' ')[0]}!
+                    {greeting}, {currentEmployee?.name ? currentEmployee.name.split(' ')[0] : 'Employee'}!
                   </h2>
                 </div>
 
@@ -956,7 +1077,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
               <div className="pt-1.5 border-t border-stone-800 flex items-center justify-between text-[11px] text-stone-400">
                 <span className="flex items-center gap-1.5 truncate max-w-[170px]">
                   <Building2 className="w-3 h-3 text-stone-400 shrink-0" />
-                  <span className="truncate">{currentEmployee.department}</span>
+                  <span className="truncate">{currentEmployee?.department || 'Operations'}</span>
                 </span>
                 <span className="flex items-center gap-1 text-[10px] font-semibold text-emerald-400 shrink-0">
                   <ShieldCheck className="w-3 h-3" />
@@ -975,16 +1096,6 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
             {/* CHECK-IN & CHECK-OUT ACTION TERMINAL (ON HOME PAGE) */}
             {/* ========================================================== */}
             <div className="bg-white border border-[#ded4c5] rounded-2xl p-3.5 sm:p-4 space-y-3 shadow-2xs">
-              
-              {/* Location Permission Prompt Card when location access is needed */}
-              {(locationPermissionStatus !== 'granted' || !hasAcquiredRealGPS) && (
-                <LocationPermissionPrompt
-                  variant="card"
-                  title="📍 Allow Device Location Access"
-                  description="SAATA Attendance needs live GPS access to confirm your presence at authorized office geofences for check-in."
-                />
-              )}
-
               {/* Live Geofence & GPS Radar Terminal Widget */}
               <div className="bg-[#fbf9f5] border border-[#ded4c5] rounded-2xl p-3 sm:p-3.5 space-y-2.5">
                 <div className="flex items-start justify-between gap-2">
@@ -1019,7 +1130,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                         </span>
                       </div>
                       <h4 className="font-extrabold text-stone-900 text-xs sm:text-sm truncate">
-                        {detectedOffice.name}
+                        {detectedOffice?.name || 'Authorized Office'}
                       </h4>
                     </div>
                   </div>
@@ -1056,13 +1167,13 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                   <div className="flex items-center justify-between text-stone-700">
                     <span className="text-stone-500 font-mono">Distance to center:</span>
                     <span className="font-bold font-mono text-stone-900">
-                      {formatDistance(geofenceResult.distanceToNearestMeters)}{' '}
-                      <span className="text-stone-400 font-normal font-sans">(Allowed: {detectedOffice.radiusMeters}m)</span>
+                      {formatDistance(geofenceResult?.distanceToNearestMeters || 0)}{' '}
+                      <span className="text-stone-400 font-normal font-sans">(Allowed: {detectedOffice?.radiusMeters || 200}m)</span>
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-[10px] text-stone-500 font-mono pt-1 border-t border-stone-100">
-                    <span>GPS: {currentCoords.latitude.toFixed(5)}, {currentCoords.longitude.toFixed(5)}</span>
-                    <span className="text-stone-600">±{Math.round(currentCoords.accuracy)}m {isUsingRealGPS ? '(Live GPS)' : '(Simulated)'}</span>
+                    <span>GPS: {(currentCoords?.latitude || 0).toFixed(5)}, {(currentCoords?.longitude || 0).toFixed(5)}</span>
+                    <span className="text-stone-600">±{Math.round(currentCoords?.accuracy || 10)}m {isUsingRealGPS ? '(Live GPS)' : '(Simulated)'}</span>
                   </div>
                 </div>
 
@@ -1073,28 +1184,16 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                   </div>
                 )}
 
-                {/* Helpful calibration guidance when outside geofence */}
-                {!geofenceResult.isInAllowedGeofence && (
-                  <div className="bg-amber-50 border border-amber-200/90 rounded-xl p-2.5 space-y-1.5 text-[11px] text-amber-950">
-                    <div className="flex items-start gap-1.5">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-700 shrink-0 mt-0.5" />
-                      <p className="leading-snug">
-                        {geofenceResult.statusMessage}
-                      </p>
-                    </div>
-
-                    {(isCurrentHR || currentEmployee.role === 'admin') && (
-                      <div className="pt-1 flex items-center justify-between gap-2 border-t border-amber-200">
-                        <span className="text-[10px] text-amber-900 font-semibold">HR Admin Quick Action:</span>
-                        <button
-                          type="button"
-                          onClick={handleCalibrateOfficeToMyGPS}
-                          className="text-[10px] font-bold text-amber-950 bg-amber-200/90 hover:bg-amber-300 px-2 py-0.5 rounded-md transition-colors cursor-pointer"
-                        >
-                          📍 Set "{detectedOffice.name}" to My Current GPS
-                        </button>
-                      </div>
-                    )}
+                {/* Discrete HR Admin GPS Calibration Action */}
+                {(isCurrentHR || currentEmployee?.role === 'admin') && !geofenceResult?.isInAllowedGeofence && (
+                  <div className="pt-0.5 flex items-center justify-end">
+                    <button
+                      type="button"
+                      onClick={handleCalibrateOfficeToMyGPS}
+                      className="text-[10px] font-medium text-stone-500 hover:text-stone-800 underline cursor-pointer"
+                    >
+                      Calibrate office to current GPS
+                    </button>
                   </div>
                 )}
 
@@ -1108,21 +1207,6 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                     <GeofenceMap height="200px" allowClickToTeleport={true} />
                   </div>
                 )}
-              </div>
-
-              {/* Punch Notes Input */}
-              <div className="space-y-1">
-                <label htmlFor="home-punch-notes-input" className="text-[11px] font-bold text-stone-700 block">
-                  Punch Notes / Duty Remarks (Optional)
-                </label>
-                <input
-                  id="home-punch-notes-input"
-                  type="text"
-                  value={punchNotes}
-                  onChange={(e) => setPunchNotes(e.target.value)}
-                  placeholder="e.g. On-site inspection, morning check-in..."
-                  className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs text-stone-900 focus:outline-hidden focus:border-stone-800 placeholder:text-stone-400 shadow-2xs"
-                />
               </div>
 
               {/* 2 ACTION BUTTONS (CHECK IN & CHECK OUT - BOTH ALWAYS AVAILABLE) */}
@@ -1181,7 +1265,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                   <div>
                     <h3 className="text-xs font-extrabold text-stone-900">Today's Attendance Status</h3>
                     <p className="text-[10px] text-stone-500">
-                      {todayRecord?.officeLocationName || detectedOffice.name}
+                      {todayRecord?.officeLocationName || detectedOffice?.name || 'Headquarters'}
                     </p>
                   </div>
                 </div>
@@ -1329,14 +1413,14 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                 <div className="px-2 py-1.5 bg-[#fcfaf7] border border-stone-200 rounded-md flex items-center justify-between text-[11px]">
                   <span className="text-[10px] font-medium text-stone-600">Sick Leave</span>
                   <span className="font-mono text-[10px] font-extrabold text-stone-800">
-                    {currentEmployee.leaveBalance?.sick ?? 10} <span className="text-[9px] font-normal text-stone-400">/ {hrAnnualQuota.sick}d</span>
+                    {currentEmployee?.leaveBalance?.sick ?? 10} <span className="text-[9px] font-normal text-stone-400">/ {hrAnnualQuota?.sick || 10}d</span>
                   </span>
                 </div>
 
                 <div className="px-2 py-1.5 bg-[#fcfaf7] border border-stone-200 rounded-md flex items-center justify-between text-[11px]">
                   <span className="text-[10px] font-medium text-stone-600">Casual Leave</span>
                   <span className="font-mono text-[10px] font-extrabold text-stone-800">
-                    {currentEmployee.leaveBalance?.casual ?? 8} <span className="text-[9px] font-normal text-stone-400">/ {hrAnnualQuota.casual}d</span>
+                    {currentEmployee?.leaveBalance?.casual ?? 8} <span className="text-[9px] font-normal text-stone-400">/ {hrAnnualQuota?.casual || 8}d</span>
                   </span>
                 </div>
               </div>
@@ -1374,16 +1458,16 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
         {activeTab === 'attendance' && (
           <div className="space-y-4 animate-in fade-in duration-200">
             {/* Header Card */}
-            <div className="bg-gradient-to-br from-stone-900 to-stone-800 text-stone-100 rounded-2xl p-4 shadow-md space-y-1">
+            <div className="bg-gradient-to-br from-stone-900 to-stone-800 text-stone-100 rounded-xl px-3 py-2 shadow-xs space-y-1">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-xl bg-amber-400/20 text-amber-400 flex items-center justify-center">
-                    <History className="w-5 h-5" />
+                  <div className="w-6 h-6 rounded-lg bg-amber-400/20 text-amber-400 flex items-center justify-center">
+                    <History className="w-3.5 h-3.5" />
                   </div>
                   <div>
-                    <h2 className="text-sm font-extrabold text-stone-50">My Attendance History</h2>
-                    <p className="text-[10px] text-stone-300">
-                      Past logs, punch records & monthly analytics
+                    <h2 className="text-xs font-bold text-stone-50">Attendance and Reports</h2>
+                    <p className="text-[9px] text-stone-300">
+                      Past logs & monthly analytics
                     </p>
                   </div>
                 </div>
@@ -1392,9 +1476,9 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                   type="button"
                   onClick={handleExportAttendancePDF}
                   disabled={filteredMyAttendance.length === 0}
-                  className="px-2.5 py-1.5 bg-stone-800 hover:bg-stone-700 text-amber-300 rounded-xl text-[10px] font-bold flex items-center gap-1 border border-stone-700 transition-colors cursor-pointer"
+                  className="px-2 py-1 bg-stone-800 hover:bg-stone-700 text-amber-300 rounded-lg text-[9px] font-bold flex items-center gap-1 border border-stone-700 transition-colors cursor-pointer"
                 >
-                  <FileDown className="w-3.5 h-3.5" />
+                  <FileDown className="w-3 h-3" />
                   <span>PDF Export</span>
                 </button>
               </div>
@@ -1552,9 +1636,10 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                       </thead>
                       <tbody className="divide-y divide-[#ded4c5]/60">
                         {filteredMyAttendance.map((record) => {
-                          const isTodayRec = record.date === new Date().toISOString().split('T')[0];
-                          const [y, m, d] = record.date.split('-').map(Number);
-                          const dateObj = new Date(y, m - 1, d);
+                          const todayIso = new Date().toISOString().split('T')[0];
+                          const isTodayRec = record.date === todayIso;
+                          const [y, m, d] = (record.date || '').split('-').map(Number);
+                          const dateObj = (y && m && d) ? new Date(y, m - 1, d) : new Date();
                           const dayShort = dateObj.toLocaleDateString(undefined, { weekday: 'short' });
                           const dateShort = dateObj.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
 
@@ -1580,7 +1665,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                                   {record.checkInTime || '—'}
                                 </div>
                                 <div className="text-[8.5px] text-stone-400 truncate max-w-[70px]">
-                                  {record.officeLocationName?.split(' ')[0] || 'Office'}
+                                  {record.officeLocationName ? record.officeLocationName.split(' ')[0] : 'Office'}
                                 </div>
                               </td>
 
@@ -1598,11 +1683,11 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                                 </span>
                               </td>
 
-                              {/* Status Column */}
+                               {/* Status Column */}
                               <td className="py-2.5 px-1.5 text-right align-middle">
                                 <span
                                   className={`inline-block px-1 py-0.5 rounded text-[8px] font-black uppercase tracking-tight truncate max-w-full ${
-                                    record.status === 'on_time' || record.status === 'completed' || record.status === 'present'
+                                    record.status === 'on_time' || record.status === 'completed' || (record.status as string) === 'present'
                                       ? 'bg-emerald-100 text-emerald-900 border border-emerald-200'
                                       : record.status === 'late'
                                       ? 'bg-amber-100 text-amber-900 border border-amber-200'
@@ -1641,9 +1726,10 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
               ) : (
                 /* EXPANDED ATTENDANCE CARDS */
                 filteredMyAttendance.map((record) => {
-                  const isTodayRec = record.date === new Date().toISOString().split('T')[0];
-                  const [y, m, d] = record.date.split('-').map(Number);
-                  const dateObj = new Date(y, m - 1, d);
+                  const todayIso = new Date().toISOString().split('T')[0];
+                  const isTodayRec = record.date === todayIso;
+                  const [y, m, d] = (record.date || '').split('-').map(Number);
+                  const dateObj = (y && m && d) ? new Date(y, m - 1, d) : new Date();
                   const formattedDate = dateObj.toLocaleDateString(undefined, {
                     weekday: 'short',
                     month: 'short',
@@ -1780,92 +1866,91 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
 
             {/* ================= LEAVE APPLICATION FORM ================= */}
             {requestMode === 'leave' && (
-              <div className="bg-white border border-[#ded4c5] rounded-2xl p-4 space-y-4 shadow-2xs">
-                <div className="border-b border-[#ded4c5] pb-2.5">
-                  <h2 className="text-sm font-extrabold text-stone-900 flex items-center gap-1.5">
-                    <Calendar className="w-4 h-4 text-stone-700" />
-                    <span>Apply for Leave</span>
-                  </h2>
-                  <p className="text-[11px] text-stone-500">
-                    Grade {employeeGrade?.gradeCode || 'Standard'} leave policies & quotas apply
-                  </p>
-                </div>
+              <div className="bg-white border border-[#ded4c5] rounded-2xl p-3 space-y-2.5 shadow-2xs">
+                {/* Header & Balance Compact Bar */}
+                <div className="flex items-center justify-between border-b border-[#ded4c5] pb-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-900 border border-amber-300 flex items-center justify-center shrink-0">
+                      <Calendar className="w-4 h-4 text-amber-800" />
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="text-xs font-black text-stone-900 leading-tight truncate">
+                        Apply for Leave
+                      </h2>
+                      <p className="text-[10px] text-stone-500 truncate">
+                        Grade {employeeGrade?.gradeCode || 'Standard'} Quota
+                      </p>
+                    </div>
+                  </div>
 
-                {/* Live Allowance & Balance Quick Glance */}
-                <div className="p-2.5 bg-[#fbf9f5] border border-[#ded4c5] rounded-xl space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-stone-700">Annual Leave Balance:</span>
-                    <span className="font-mono font-extrabold text-amber-900 bg-amber-50 border border-amber-200/80 px-2 py-0.5 rounded text-[11px]">
-                      {annualLeaveStats.available} / {annualLeaveStats.totalAllowed} Days
+                  <div className="text-right shrink-0">
+                    <span className="font-mono font-extrabold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[10px] inline-block">
+                      {annualLeaveStats.available}/{annualLeaveStats.totalAllowed}d Balance
                     </span>
-                  </div>
-
-                  <div className="w-full bg-stone-200/80 h-1 rounded-full overflow-hidden">
-                    <div
-                      className="bg-amber-500 h-full rounded-full transition-all duration-300"
-                      style={{ width: `${annualLeaveStats.percentLeft}%` }}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between text-[9px] text-stone-500 font-mono">
-                    <span>HR Quota: {annualLeaveStats.totalAllowed}d / yr</span>
-                    <span>{annualLeaveStats.used > 0 ? `${annualLeaveStats.used}d used` : '0 used'} • {annualLeaveStats.percentLeft}% left</span>
                   </div>
                 </div>
 
                 {leaveSubmittedSuccess && (
-                  <div className="p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 text-xs flex items-start gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                    <div>
-                      <strong className="block font-bold">Leave Application Submitted!</strong>
-                      <span>{leaveSubmittedSuccess}</span>
-                    </div>
+                  <div className="p-2 bg-emerald-50 border border-emerald-300 rounded-lg text-emerald-900 text-xs flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span className="truncate">{leaveSubmittedSuccess}</span>
                   </div>
                 )}
 
                 {leaveValidationError && (
-                  <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-rose-900 text-xs flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                    <span>{leaveValidationError}</span>
+                  <div className="p-2 bg-rose-50 border border-rose-300 rounded-lg text-rose-900 text-xs flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                    <span className="truncate">{leaveValidationError}</span>
                   </div>
                 )}
 
-                <form onSubmit={handleLeaveSubmit} className="space-y-3.5">
-                  {/* Leave Category */}
-                  <div className="space-y-1">
-                    <label htmlFor="mobile-leave-type-select" className="text-xs font-bold text-stone-700 block">
-                      Leave Type *
-                    </label>
-                    <select
-                      id="mobile-leave-type-select"
-                      value={leaveType}
-                      onChange={(e) => setLeaveType(e.target.value as LeaveType)}
-                      className="w-full bg-[#fcfaf7] border border-[#ded4c5] rounded-xl px-3 py-2 text-xs font-medium text-stone-900 focus:outline-hidden focus:border-stone-800"
-                    >
-                      {allowedLeaveDefs.map((def) => {
-                        let optVal: LeaveType = 'casual';
-                        if (def.code === 'CL') optVal = 'casual';
-                        else if (def.code === 'SL') optVal = 'sick';
-                        else if (def.code === 'AL') optVal = 'annual';
-                        else if (def.code === 'ML') optVal = 'maternity';
-                        else if (def.code === 'PL') optVal = 'paternity';
-                        else if (def.code === 'BL') optVal = 'bereavement';
-                        else if (def.code === 'UL' || def.code === 'LOP') optVal = 'unpaid';
-                        else if (def.code === 'EL' || def.code === 'EML') optVal = 'emergency';
+                <form onSubmit={handleLeaveSubmit} className="space-y-2">
+                  {/* Row 1: Leave Type (2/3 width) + Calculated Duration Badge (1/3 width) */}
+                  <div className="grid grid-cols-3 gap-2 items-end">
+                    <div className="col-span-2 space-y-0.5">
+                      <label htmlFor="mobile-leave-type-select" className="text-[10px] font-extrabold uppercase text-stone-600 block">
+                        Leave Type *
+                      </label>
+                      <select
+                        id="mobile-leave-type-select"
+                        value={leaveType}
+                        onChange={(e) => setLeaveType(e.target.value as LeaveType)}
+                        className="w-full bg-[#fcfaf7] border border-[#ded4c5] rounded-xl px-2.5 py-1.5 text-xs font-semibold text-stone-900 focus:outline-hidden focus:border-stone-800"
+                      >
+                        {allowedLeaveDefs.map((def) => {
+                          let optVal: LeaveType = 'casual';
+                          if (def.code === 'CL') optVal = 'casual';
+                          else if (def.code === 'SL') optVal = 'sick';
+                          else if (def.code === 'AL') optVal = 'annual';
+                          else if (def.code === 'ML') optVal = 'maternity';
+                          else if (def.code === 'PL') optVal = 'paternity';
+                          else if (def.code === 'BL') optVal = 'bereavement';
+                          else if (def.code === 'UL' || def.code === 'LOP') optVal = 'unpaid';
+                          else if (def.code === 'EL' || def.code === 'EML') optVal = 'emergency';
 
-                        return (
-                          <option key={def.id} value={optVal}>
-                            {def.code} — {def.name} {def.nameAr ? `(${def.nameAr})` : ''}
-                          </option>
-                        );
-                      })}
-                    </select>
+                          return (
+                            <option key={def.id} value={optVal}>
+                              {def.code} — {def.name}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <span className="text-[10px] font-extrabold uppercase text-stone-600 block">
+                        Duration
+                      </span>
+                      <div className="bg-[#f5efe4] border border-[#ded4c5] rounded-xl py-1.5 px-2 text-center text-xs font-mono font-black text-stone-900">
+                        {calculateLeaveDays()} {calculateLeaveDays() === 1 ? 'Day' : 'Days'}
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Date Range */}
+                  {/* Row 2: Date Range */}
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <label htmlFor="mobile-leave-start-date" className="text-xs font-bold text-stone-700 block">
+                    <div className="space-y-0.5">
+                      <label htmlFor="mobile-leave-start-date" className="text-[10px] font-extrabold uppercase text-stone-600 block">
                         Start Date *
                       </label>
                       <input
@@ -1873,11 +1958,11 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                         type="date"
                         value={leaveStartDate}
                         onChange={(e) => setLeaveStartDate(e.target.value)}
-                        className="w-full bg-[#fcfaf7] border border-[#ded4c5] rounded-xl px-3 py-2 text-xs font-medium text-stone-900 focus:outline-hidden focus:border-stone-800"
+                        className="w-full bg-[#fcfaf7] border border-[#ded4c5] rounded-xl px-2.5 py-1.5 text-xs font-medium text-stone-900 focus:outline-hidden focus:border-stone-800"
                       />
                     </div>
-                    <div className="space-y-1">
-                      <label htmlFor="mobile-leave-end-date" className="text-xs font-bold text-stone-700 block">
+                    <div className="space-y-0.5">
+                      <label htmlFor="mobile-leave-end-date" className="text-[10px] font-extrabold uppercase text-stone-600 block">
                         End Date *
                       </label>
                       <input
@@ -1885,22 +1970,14 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                         type="date"
                         value={leaveEndDate}
                         onChange={(e) => setLeaveEndDate(e.target.value)}
-                        className="w-full bg-[#fcfaf7] border border-[#ded4c5] rounded-xl px-3 py-2 text-xs font-medium text-stone-900 focus:outline-hidden focus:border-stone-800"
+                        className="w-full bg-[#fcfaf7] border border-[#ded4c5] rounded-xl px-2.5 py-1.5 text-xs font-medium text-stone-900 focus:outline-hidden focus:border-stone-800"
                       />
                     </div>
                   </div>
 
-                  {/* Duration Display */}
-                  <div className="p-2.5 bg-[#f5efe4] border border-[#ded4c5] rounded-xl flex items-center justify-between text-xs">
-                    <span className="font-semibold text-stone-700">Calculated Duration:</span>
-                    <span className="font-mono font-bold text-stone-900 bg-white px-2 py-0.5 rounded border border-[#ded4c5]">
-                      {calculateLeaveDays()} Days
-                    </span>
-                  </div>
-
-                  {/* Reason */}
-                  <div className="space-y-1">
-                    <label htmlFor="mobile-leave-reason-input" className="text-xs font-bold text-stone-700 block">
+                  {/* Row 3: Reason */}
+                  <div className="space-y-0.5">
+                    <label htmlFor="mobile-leave-reason-input" className="text-[10px] font-extrabold uppercase text-stone-600 block">
                       Reason for Leave *
                     </label>
                     <textarea
@@ -1908,17 +1985,18 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                       rows={2}
                       value={leaveReason}
                       onChange={(e) => setLeaveReason(e.target.value)}
-                      placeholder="Specify reason for leave request..."
-                      className="w-full bg-[#fcfaf7] border border-[#ded4c5] rounded-xl px-3 py-2 text-xs font-medium text-stone-900 focus:outline-hidden focus:border-stone-800"
+                      placeholder="Specify reason for leave..."
+                      className="w-full bg-[#fcfaf7] border border-[#ded4c5] rounded-xl px-2.5 py-1.5 text-xs font-medium text-stone-900 focus:outline-hidden focus:border-stone-800 resize-none"
                     />
                   </div>
 
+                  {/* Row 4: Submit Button */}
                   <button
                     type="submit"
                     id="submit-leave-btn"
-                    className="w-full bg-stone-900 hover:bg-stone-800 text-stone-50 py-3 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+                    className="w-full bg-stone-900 hover:bg-stone-800 text-stone-50 py-2.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-all cursor-pointer active:scale-98"
                   >
-                    <Send className="w-4 h-4" />
+                    <Send className="w-3.5 h-3.5 text-amber-300" />
                     <span>Submit Leave Application</span>
                   </button>
                 </form>
@@ -2440,7 +2518,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                                 className={`inline-block px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-tight truncate max-w-full ${
                                   log.status === 'success' || log.status === 'approved'
                                     ? 'bg-emerald-100 text-emerald-900'
-                                    : log.status === 'warning' || log.status === 'late'
+                                    : log.status === 'warning' || (log.status as string) === 'late'
                                     ? 'bg-amber-100 text-amber-900'
                                     : log.status === 'error' || log.status === 'rejected'
                                     ? 'bg-rose-100 text-rose-900'
@@ -2596,17 +2674,17 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
             <div className="bg-white border border-[#ded4c5] rounded-2xl p-4 space-y-3.5 shadow-2xs">
               <div className="flex items-center gap-3">
                 <img
-                  src={currentEmployee.avatar}
-                  alt={currentEmployee.name}
+                  src={currentEmployee?.avatar || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&auto=format&fit=crop&q=80'}
+                  alt={currentEmployee?.name || 'Employee'}
                   className="w-14 h-14 rounded-full object-cover border-2 border-[#ded4c5]"
                 />
                 <div className="min-w-0">
                   <h3 className="text-sm font-extrabold text-stone-900 truncate">
-                    {currentEmployee.name}
+                    {currentEmployee?.name || 'Employee'}
                   </h3>
-                  <p className="text-xs text-stone-600 truncate">{currentEmployee.designation}</p>
+                  <p className="text-xs text-stone-600 truncate">{currentEmployee?.designation || 'Staff'}</p>
                   <p className="text-[11px] text-stone-500 truncate">
-                    {currentEmployee.department} • Code: <strong className="text-stone-800">{currentEmployee.employeeCode}</strong>
+                    {currentEmployee?.department || 'Operations'} • Code: <strong className="text-stone-800">{currentEmployee?.employeeCode || 'EMP-000'}</strong>
                   </p>
                 </div>
               </div>
@@ -2628,7 +2706,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                 <div className="p-2.5 bg-[#fbf9f5] border border-[#ded4c5] rounded-xl">
                   <span className="text-[10px] text-stone-500 block">Joined Date</span>
                   <span className="font-bold text-stone-900 font-mono">
-                    {currentEmployee.joinedDate || '2023-01-01'}
+                    {currentEmployee?.joinedDate || '2023-01-01'}
                   </span>
                 </div>
               </div>
@@ -2689,8 +2767,47 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                   <span>Auto-Detected Office:</span>
                 </div>
                 <p className="text-[10px]">
-                  {detectedOffice.name} ({detectedOffice.city}) — Radius {detectedOffice.radiusMeters}m
+                  {detectedOffice?.name || 'Sharjah Headquarters'} ({detectedOffice?.city || 'Sharjah'}) — Radius {detectedOffice?.radiusMeters || 200}m
                 </p>
+              </div>
+
+              {/* Proactive 50m Geofence Proximity Alert Settings */}
+              <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-emerald-600" />
+                    <div>
+                      <strong className="block text-xs font-extrabold text-stone-900">
+                        {t('prox.setting_title', 'Proactive 50m Geofence Alert')}
+                      </strong>
+                      <span className="text-[10px] text-stone-600">
+                        {pushNotificationPermission === 'granted'
+                          ? 'Local Push & Haptics Enabled'
+                          : pushNotificationPermission === 'denied'
+                          ? 'Push Notifications Blocked'
+                          : 'Tap below to enable Push Notifications'}
+                      </span>
+                    </div>
+                  </div>
+                  {pushNotificationPermission !== 'granted' && pushNotificationPermission !== 'unsupported' && (
+                    <button
+                      type="button"
+                      onClick={requestPushNotificationPermission}
+                      className="px-2.5 py-1 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-[10px] rounded-lg shadow-2xs cursor-pointer"
+                    >
+                      Allow Push
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={triggerTestProximityAlert}
+                  className="w-full py-2 bg-gradient-to-r from-emerald-800 to-teal-900 hover:from-emerald-700 hover:to-teal-800 text-emerald-100 font-extrabold text-xs rounded-xl shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 border border-emerald-600/40"
+                >
+                  <Zap className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
+                  <span>{t('prox.test_btn', 'Test 50m Proximity Alert & Vibration')}</span>
+                </button>
               </div>
             </div>
 
@@ -2713,7 +2830,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                     </span>
                   </div>
                   <p className="text-[11px] text-emerald-900 font-medium">
-                    {currentEmployee.deviceBinding?.deviceName || 'Authorized Mobile Device'}
+                    {currentEmployee?.deviceBinding?.deviceName || 'Authorized Mobile Device'}
                   </p>
                   <p className="text-[10px] text-emerald-800">
                     Mobile punches and requests are tied strictly to this physical mobile device.
@@ -2833,6 +2950,18 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                 </div>
               </div>
             )}
+
+            {/* Language Preference Setting */}
+            <div className="bg-stone-900 border border-stone-800 rounded-2xl p-3.5 flex items-center justify-between shadow-xs">
+              <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-emerald-400" />
+                <div>
+                  <h4 className="text-xs font-bold text-stone-100">Language / اللغة</h4>
+                  <p className="text-[10px] text-stone-400">Choose display language</p>
+                </div>
+              </div>
+              <LanguageSwitcher variant="pill" className="bg-stone-800 border-stone-700 text-stone-200" />
+            </div>
 
             {/* Log Out Button */}
             <div className="pt-2">
@@ -3223,6 +3352,123 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                   Cancel
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================================= */}
+      {/* PUNCH BIOMETRIC / FACE ID VERIFICATION MODAL */}
+      {/* ======================================================================= */}
+      {showFacePunchModal && (
+        <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-stone-900 border border-stone-800 rounded-3xl w-full max-w-xs p-5 space-y-4 shadow-2xl text-stone-100 text-center relative overflow-hidden">
+            {/* Top decorative accent */}
+            <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-500 via-amber-300 to-amber-600" />
+
+            <div className="flex items-center justify-between pb-1 border-b border-stone-800">
+              <div className="flex items-center gap-1.5 text-left">
+                {biometricType === 'face' ? (
+                  <ScanFace className="w-4 h-4 text-amber-400" />
+                ) : (
+                  <Fingerprint className="w-4 h-4 text-amber-400" />
+                )}
+                <div>
+                  <h3 className="text-xs font-black uppercase tracking-wider text-amber-400">
+                    {biometricType === 'face' ? 'Face ID Verification' : 'Biometric Sensor'}
+                  </h3>
+                  <p className="text-[10px] text-stone-400">
+                    {pendingPunchType === 'check_in' ? 'Verifying Check-In' : 'Verifying Check-Out'}
+                  </p>
+                </div>
+              </div>
+
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300 border border-stone-700">
+                SAATA-BIO
+              </span>
+            </div>
+
+            {/* Viewfinder / Scanner target */}
+            <div className="relative mx-auto w-44 h-44 rounded-2xl bg-stone-950 border-2 border-stone-800 flex items-center justify-center overflow-hidden">
+              {/* Corner targeting brackets */}
+              <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-amber-400 rounded-tl" />
+              <div className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-amber-400 rounded-tr" />
+              <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-amber-400 rounded-bl" />
+              <div className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-amber-400 rounded-br" />
+
+              {/* Scanning laser effect */}
+              {facePunchScanning && (
+                <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-amber-400 to-transparent shadow-[0_0_12px_rgba(251,191,36,0.9)] animate-bounce" />
+              )}
+
+              {/* Icon / Viewfinder content */}
+              <div className="flex flex-col items-center justify-center gap-2 z-10">
+                {facePunchSuccess ? (
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-400 text-emerald-400 flex items-center justify-center animate-in zoom-in-50">
+                    <CheckCircle2 className="w-9 h-9 text-emerald-400" />
+                  </div>
+                ) : biometricType === 'face' ? (
+                  <div className="relative">
+                    <ScanFace
+                      className={`w-16 h-16 text-amber-400/90 transition-all ${
+                        facePunchScanning ? 'animate-pulse scale-105' : ''
+                      }`}
+                    />
+                    <div className="absolute inset-0 rounded-full border border-dashed border-amber-400/40 animate-spin" style={{ animationDuration: '6s' }} />
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <Fingerprint
+                      className={`w-16 h-16 text-amber-400/90 transition-all ${
+                        facePunchScanning ? 'animate-pulse scale-105' : ''
+                      }`}
+                    />
+                  </div>
+                )}
+
+                <span className="text-[11px] font-mono text-stone-300 font-bold">
+                  {currentEmployee?.name}
+                </span>
+              </div>
+
+              {/* Telemetry overlay */}
+              <div className="absolute bottom-1.5 inset-x-2 flex justify-between text-[8px] font-mono text-stone-500">
+                <span>GEO: LOCKED</span>
+                <span>SEC: SHA-256</span>
+              </div>
+            </div>
+
+            {/* Status Message */}
+            <div className="space-y-1">
+              <p className={`text-xs font-bold ${facePunchSuccess ? 'text-emerald-400' : 'text-stone-300'}`}>
+                {facePunchStatusMsg}
+              </p>
+              <p className="text-[10px] text-stone-500">
+                {currentEmployee?.department} • ID: #{currentEmployee?.id.slice(-4).toUpperCase()}
+              </p>
+            </div>
+
+            {/* Actions: Fallback & Cancel */}
+            <div className="pt-2 flex flex-col gap-1.5">
+              {!facePunchSuccess && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowFacePunchModal(false);
+                    executeFinalPunch(pendingPunchType, false);
+                  }}
+                  className="w-full py-2 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                >
+                  Bypass Biometrics (Standard Punch)
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowFacePunchModal(false)}
+                className="w-full py-1.5 text-stone-400 hover:text-stone-200 text-xs font-medium transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>

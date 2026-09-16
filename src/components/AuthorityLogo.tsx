@@ -4,7 +4,7 @@ import { MapPin, Shield } from 'lucide-react';
 interface AuthorityLogoProps {
   className?: string;
   imgClassName?: string;
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
   fallbackText?: string;
 }
 
@@ -21,6 +21,7 @@ export const AuthorityLogo: React.FC<AuthorityLogoProps> = ({
     md: 'w-9 h-9',
     lg: 'w-14 h-14 sm:w-16 sm:h-16',
     xl: 'w-20 h-20 sm:w-24 sm:h-24',
+    full: 'w-full h-auto',
   };
 
   const imgSize = sizeClasses[size] || sizeClasses.md;
@@ -69,8 +70,8 @@ export const AuthorityLogo: React.FC<AuthorityLogoProps> = ({
           <polygon points="216,368 221,378 232,379 224,387 226,398 216,392 206,398 208,387 200,379 211,378" fill="url(#goldGradFull)" />
           <polygon points="256,380 261,390 272,391 264,399 266,410 256,404 246,410 248,399 240,391 251,390" fill="url(#goldGradFull)" />
           <polygon points="296,368 301,378 312,379 304,387 306,398 296,392 286,398 288,387 280,379 291,378" fill="url(#goldGradFull)" />
-          <text x="256" y="448" fontFamily="sans-serif" fontSize="28" fontWeight="900" letterSpacing="4" fill="url(#goldGradFull)" textAnchor="middle">
-            SAATA
+          <text x="256" y="448" fontFamily="sans-serif" fontSize="22" fontWeight="900" letterSpacing="2" fill="url(#goldGradFull)" textAnchor="middle">
+            SAA TIME & ATTENDANCE
           </text>
         </svg>
       </div>
@@ -81,7 +82,7 @@ export const AuthorityLogo: React.FC<AuthorityLogoProps> = ({
     <div className={`relative flex items-center justify-center shrink-0 ${className}`}>
       <img
         src={imgSrc}
-        alt="SAATA Logo"
+        alt="SAA Time and Attendance Logo"
         onError={handleImgError}
         className={`object-contain transition-transform duration-200 ${imgSize} ${imgClassName}`}
       />

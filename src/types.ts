@@ -72,16 +72,19 @@ export interface ActiveMobileSession {
 export interface Employee {
   id: string;
   name: string;
+  nameAr?: string; // Full Name in Arabic (الاسم الكامل باللغة العربية)
   email: string;
   username?: string; // Employee system login username
   password?: string; // Employee system login password / credentials
   isActive?: boolean; // Active vs Inactive staff status
   canLogin?: boolean; // HR Login toggle: whether employee is allowed to log in and use the system (default: true)
+  loginAccessDisabled?: boolean; // Legacy/convenience HR flag
   avatar: string;
   employeeCode: string;
   role: UserRole;
   department: string;
   designation: string;
+  designationAr?: string; // Designation in Arabic (المسمى الوظيفي باللغة العربية)
   gradeId?: string; // ID of the GradeDefinition (e.g. 'gr_e1', 'gr_e2', etc.)
   workScheduleId?: string; // ID of the assigned WorkScheduleDefinition (e.g. 'sched_main')
   shiftTimingId?: string; // ID of the assigned ShiftTiming (e.g. 'shift_general', 'shift_early', etc.)
@@ -103,6 +106,8 @@ export interface Employee {
   allowedLocationIds: string[]; // Strict list of office location IDs this employee is authorized to mark attendance at
   managerId?: string; // ID of the reporting manager
   todayStatus: 'present' | 'absent' | 'on_leave' | 'on_permission';
+  biometricEnabled?: boolean;
+  biometricType?: 'face' | 'fingerprint';
   leaveBalance: {
     casual: number;
     sick: number;
@@ -148,6 +153,8 @@ export interface AttendanceRecord {
   totalHoursWorked?: number;
   breakDurationMinutes?: number;
   deviceInfo?: string;
+  biometricVerified?: boolean;
+  biometricType?: 'face' | 'fingerprint';
   notes?: string;
 }
 
@@ -175,6 +182,7 @@ export interface ApprovalStepInfo {
 export interface AppNotification {
   id: string;
   recipientEmployeeId: string;
+  employeeId?: string;
   title: string;
   message: string;
   type:
@@ -191,6 +199,7 @@ export interface AppNotification {
   priority?: 'low' | 'normal' | 'high' | 'urgent';
   relatedRequestId?: string;
   timestamp: string;
+  createdAt?: string;
   isRead: boolean;
 }
 
@@ -226,6 +235,7 @@ export interface LeaveRequest {
   // Legacy/Compatibility fields
   reviewedBy?: string;
   reviewedAt?: string;
+  reviewerComments?: string;
   managerComments?: string;
   hrComments?: string;
 }
@@ -246,6 +256,7 @@ export interface PermissionRequest {
   appliedAt: string;
   reviewedBy?: string;
   reviewedAt?: string;
+  reviewerComments?: string;
   managerComments?: string;
 }
 
@@ -267,8 +278,10 @@ export interface LeaveDefinition {
   id: string;
   code: string; // e.g. 'CL', 'SL', 'AL', 'ML', 'PL', 'BL', 'CO', 'UL'
   name: string; // e.g. 'Casual Leave', 'Sick / Medical Leave'
+  nameAr?: string;
   category: 'paid' | 'unpaid' | 'statutory';
   annualQuotaDays: number;
+  annualQuota?: number; // legacy alias
   minDurationDays: number; // e.g. 0.5, 1 day
   maxDurationDays: number; // e.g. 3, 7, 14, 90 days
   maxConsecutiveDays?: number;
@@ -386,7 +399,7 @@ export interface WorkScheduleDefinition {
 // USER ACTIVITY & AUDIT LOGS
 // ==========================================
 
-export type ActivityLogCategory = 'punch' | 'auth' | 'leave' | 'permission' | 'system';
+export type ActivityLogCategory = 'punch' | 'auth' | 'leave' | 'permission' | 'system' | 'hr' | 'attendance';
 
 export type ActivityLogType =
   | 'check_in'
@@ -402,7 +415,12 @@ export type ActivityLogType =
   | 'permission_rejected'
   | 'anniversary_refill'
   | 'profile_update'
-  | 'gps_verification';
+  | 'gps_verification'
+  | 'security_alert'
+  | 'employee_update'
+  | 'location_update'
+  | 'location_verify'
+  | 'geofence_alert';
 
 export interface UserActivityLog {
   id: string;

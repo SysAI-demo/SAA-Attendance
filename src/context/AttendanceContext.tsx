@@ -47,7 +47,19 @@ import {
   INITIAL_HOLIDAY_DEFINITIONS,
   INITIAL_WORK_SCHEDULE,
 } from '../data/definitionsSeed';
-import { checkGeofenceStatus } from '../utils/geoUtils';
+import { checkGeofenceStatus, calculateDistanceMeters } from '../utils/geoUtils';
+import {
+  hapticCheckInClick,
+  hapticCheckInSuccess,
+  hapticCheckOutClick,
+  hapticCheckOutSuccess,
+  hapticBiometricScan,
+  hapticBiometricSuccess,
+  hapticError,
+  hapticWarning,
+  hapticGeofenceAlert,
+  hapticProximityReminder,
+} from '../utils/haptics';
 import {
   checkAndApplyAnniversaryRefills,
   forceEmployeeAnniversaryRefill,
@@ -57,6 +69,13 @@ import {
 import { serverApiService, serverApiService as firestoreService } from '../lib/serverApiService';
 import { getCurrentDeviceDetails, resetCurrentClientDeviceId } from '../utils/deviceUtils';
 import confetti from 'canvas-confetti';
+import {
+  getOfflineQueue,
+  enqueuePunch,
+  syncOfflineQueue,
+  QueuedPunch,
+  clearOfflineQueue,
+} from '../lib/offlineQueue';
 
 export interface PunchActionResult {
   success: boolean;
@@ -68,6 +87,9 @@ export interface PunchActionResult {
   expectedOutTime?: string;
   duration?: string;
   accuracy?: number;
+  biometricVerified?: boolean;
+  biometricType?: 'face' | 'fingerprint';
+  isOfflineQueued?: boolean;
 }
 
 interface AttendanceContextType {
@@ -78,6 +100,13 @@ interface AttendanceContextType {
   attendanceRecords: AttendanceRecord[];
   leaveRequests: LeaveRequest[];
   permissionRequests: PermissionRequest[];
+  
+  // Offline Punch Queue & Network Connectivity State
+  isOnline: boolean;
+  offlineQueueCount: number;
+  pendingOfflinePunches: QueuedPunch[];
+  syncPendingOfflinePunches: () => Promise<{ successCount: number; failedCount: number; remainingCount: number }>;
+  clearOfflinePunchQueue: () => void;
   
   // GPS & Location Permission State
   currentCoords: GeoCoordinates;
@@ -91,9 +120,16 @@ interface AttendanceContextType {
   enableRealGPS: () => Promise<void>;
   refreshGPSPosition: () => Promise<{ success: boolean; coords?: GeoCoordinates; error?: string }>;
   
+  // Proactive 50m Geofence Proximity Reminders
+  proximityAlert: { location: OfficeLocation; distanceMeters: number; timestamp: number } | null;
+  dismissProximityAlert: () => void;
+  triggerTestProximityAlert: () => void;
+  pushNotificationPermission: NotificationPermission | 'unsupported';
+  requestPushNotificationPermission: () => Promise<NotificationPermission | 'unsupported'>;
+  
   // Actions
-  markCheckIn: (notes?: string) => PunchActionResult;
-  markCheckOut: (notes?: string) => PunchActionResult;
+  markCheckIn: (notes?: string, options?: { biometricVerified?: boolean; biometricType?: 'face' | 'fingerprint' }) => PunchActionResult;
+  markCheckOut: (notes?: string, options?: { biometricVerified?: boolean; biometricType?: 'face' | 'fingerprint' }) => PunchActionResult;
   todayRecord: AttendanceRecord | undefined;
   
   // Requests
@@ -264,6 +300,8 @@ const STORAGE_KEYS = {
   DEF_HOLIDAYS: 'saata_prod_clean_v4_def_holidays',
   DEF_SCHEDULE: 'saata_prod_clean_v4_def_schedule',
   NOTIFICATIONS: 'saata_prod_clean_v4_notifications',
+  AUTH_STATUS: 'geofence_att_auth_v1',
+  APP_MODE: 'geofence_app_mode_v1',
 };
 
 export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -282,7 +320,20 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // 1. Initial State: Always starts with HR Admin account ready for user provisioning
   const [employees, setEmployees] = useState<Employee[]>(() => {
     const loaded = safeParseArray<Employee>(STORAGE_KEYS.EMPLOYEES, []);
-    return loaded.length > 0 ? loaded : [DEFAULT_HR_ADMIN_USER];
+    const baseList = loaded.length > 0 ? loaded : INITIAL_EMPLOYEES;
+    return baseList.map((emp) => {
+      if (emp.id === 'emp_01' || emp.name.toLowerCase().includes('danish khan')) {
+        return {
+          ...emp,
+          role: 'hr' as const,
+          department: 'Human Resources',
+          designation: emp.designation === 'Senior Full Stack Engineer' ? 'HR Specialist' : emp.designation,
+          designationAr: emp.designationAr || 'أخصائي الموارد البشرية',
+          nameAr: emp.nameAr || 'دانش خان',
+        };
+      }
+      return emp;
+    });
   });
 
   const [currentEmployeeId, setCurrentEmployeeIdState] = useState<string>(() => {
@@ -366,14 +417,119 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [isDbSyncing, setIsDbSyncing] = useState<boolean>(false);
   const isInitializedRef = useRef<boolean>(false);
 
+  // Network Connectivity & Offline Punch Queue State
+  const [isOnline, setIsOnline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+  const [pendingOfflinePunches, setPendingOfflinePunches] = useState<QueuedPunch[]>(() => getOfflineQueue());
+
+  // Listen for browser network changes & offline queue events
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      console.log('[AttendanceContext] Connection restored: ONLINE');
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      console.log('[AttendanceContext] Network lost: OFFLINE');
+    };
+    const handleQueueUpdate = () => {
+      setPendingOfflinePunches(getOfflineQueue());
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('saata_offline_queue_update', handleQueueUpdate);
+    window.addEventListener('storage', handleQueueUpdate);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('saata_offline_queue_update', handleQueueUpdate);
+      window.removeEventListener('storage', handleQueueUpdate);
+    };
+  }, []);
+
+  // Sync Pending Offline Punches to Server & Firestore
+  const syncPendingOfflinePunches = useCallback(async () => {
+    const queue = getOfflineQueue();
+    if (queue.length === 0) {
+      return { successCount: 0, failedCount: 0, remainingCount: 0 };
+    }
+
+    setIsDbSyncing(true);
+    const result = await syncOfflineQueue(async (item: QueuedPunch) => {
+      try {
+        await firestoreService.saveAttendanceRecord(item.record);
+        await fetch('/api/attendance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(item.record),
+        }).catch(() => null);
+        return true;
+      } catch (err) {
+        console.error('[AttendanceContext] Sync error for queued item:', err);
+        return false;
+      }
+    });
+
+    setIsDbSyncing(false);
+    setPendingOfflinePunches(getOfflineQueue());
+
+    if (result.successCount > 0) {
+      createNotification({
+        recipientEmployeeId: currentEmployeeId,
+        title: '⚡ Offline Punches Synced',
+        message: `Successfully synchronized ${result.successCount} offline punch record(s) with the server database.`,
+        type: 'system',
+      });
+    }
+
+    return result;
+  }, [currentEmployeeId]);
+
+  const clearOfflinePunchQueue = useCallback(() => {
+    clearOfflineQueue();
+    setPendingOfflinePunches([]);
+  }, []);
+
+  // Trigger automatic sync when network is restored
+  useEffect(() => {
+    if (isOnline && pendingOfflinePunches.length > 0) {
+      console.log(`[AttendanceContext] Auto-syncing ${pendingOfflinePunches.length} queued punches now that network is online...`);
+      syncPendingOfflinePunches().catch(console.error);
+    }
+  }, [isOnline, pendingOfflinePunches.length, syncPendingOfflinePunches]);
+
   // Mobile Device Simulator View Mode toggle
   const [isMobileDeviceView, setIsMobileDeviceView] = useState<boolean>(false);
 
-  // Authentication & App Mode State - Always starts at the login page when opened
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  // Authentication & App Mode State - Persisted across page refreshes
+  const [isAuthenticated, setIsAuthenticatedState] = useState<boolean>(() => {
+    try {
+      const savedAuth = localStorage.getItem(STORAGE_KEYS.AUTH_STATUS);
+      if (savedAuth === 'false') return false;
+      return true; // Default to logged in as HR
+    } catch {
+      return true;
+    }
+  });
+
+  const setIsAuthenticated = useCallback((val: boolean) => {
+    setIsAuthenticatedState(val);
+    try {
+      localStorage.setItem(STORAGE_KEYS.AUTH_STATUS, val ? 'true' : 'false');
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const [activeAppMode, setActiveAppModeState] = useState<'mobile_app' | 'admin_portal'>(() => {
     if (typeof window !== 'undefined') {
+      const savedMode = localStorage.getItem(STORAGE_KEYS.APP_MODE) as 'mobile_app' | 'admin_portal';
+      if (savedMode === 'mobile_app' || savedMode === 'admin_portal') {
+        return savedMode;
+      }
       const isMobileScreen = window.innerWidth < 768 || /Android|iPhone|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(navigator.userAgent);
       return isMobileScreen ? 'mobile_app' : 'admin_portal';
     }
@@ -382,7 +538,11 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const setActiveAppMode = (mode: 'mobile_app' | 'admin_portal') => {
     setActiveAppModeState(mode);
-    localStorage.setItem('geofence_app_mode_v1', mode);
+    try {
+      localStorage.setItem(STORAGE_KEYS.APP_MODE, mode);
+    } catch {
+      // ignore
+    }
   };
 
   // Hardware Device Security & Single Device Binding
@@ -418,6 +578,34 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [hasAcquiredRealGPS, setHasAcquiredRealGPS] = useState<boolean>(false);
   const [isLocating, setIsLocating] = useState<boolean>(false);
 
+  // Proactive 50m Geofence Proximity Alert State
+  const [proximityAlert, setProximityAlert] = useState<{ location: OfficeLocation; distanceMeters: number; timestamp: number } | null>(null);
+  const lastProximityAlertRef = useRef<Record<string, number>>({});
+  const [pushNotificationPermission, setPushNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission;
+    }
+    return 'unsupported';
+  });
+
+  const requestPushNotificationPermission = useCallback(async (): Promise<NotificationPermission | 'unsupported'> => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      setPushNotificationPermission('unsupported');
+      return 'unsupported';
+    }
+    try {
+      const perm = await Notification.requestPermission();
+      setPushNotificationPermission(perm);
+      return perm;
+    } catch (e) {
+      return Notification.permission;
+    }
+  }, []);
+
+  const dismissProximityAlert = useCallback(() => {
+    setProximityAlert(null);
+  }, []);
+
   // Dedicated device location permission request with high-accuracy -> standard-accuracy fallback
   const requestLocationPermission = useCallback(async (): Promise<{ success: boolean; coords?: GeoCoordinates; error?: string }> => {
     if (typeof window === 'undefined' || !navigator.geolocation) {
@@ -451,13 +639,13 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           (err) => {
             resolve({ success: false, error: err.message, errorCode: err.code });
           },
-          { enableHighAccuracy: highAccuracy, timeout: timeoutMs, maximumAge: 0 }
+          { enableHighAccuracy: highAccuracy, timeout: timeoutMs, maximumAge: highAccuracy ? 10000 : 30000 }
         );
       });
     };
 
-    // First Attempt: High Accuracy (GPS Chip) with 6s timeout
-    let attempt = await tryGetPosition(true, 6000);
+    // First Attempt: High Accuracy (GPS Chip) with 7s timeout
+    let attempt = await tryGetPosition(true, 7000);
 
     // Second Attempt: Fast Standard Accuracy (Wi-Fi / Cell towers) if high accuracy timed out or failed
     if (!attempt.success && attempt.errorCode !== 1) { // 1 = PERMISSION_DENIED
@@ -573,8 +761,20 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
     );
 
+    // Refresh mobile phone GPS when user unlocks phone or switches back to browser tab
+    const handleVisibilityOrFocusChange = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        requestLocationPermission();
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityOrFocusChange);
+    window.addEventListener('focus', handleVisibilityOrFocusChange);
+
     return () => {
       navigator.geolocation.clearWatch(watchId);
+      window.removeEventListener('visibilitychange', handleVisibilityOrFocusChange);
+      window.removeEventListener('focus', handleVisibilityOrFocusChange);
     };
   }, [requestLocationPermission]);
 
@@ -594,8 +794,21 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         const syncData = await serverApiService.fetchFullSync();
         if (syncData) {
           if (Array.isArray(syncData.employees)) {
-            setEmployees(syncData.employees);
-            localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(syncData.employees));
+            const sanitizedEmployees = syncData.employees.map((emp) => {
+              if (emp.id === 'emp_01' || (emp.name && emp.name.toLowerCase().includes('danish khan'))) {
+                return {
+                  ...emp,
+                  role: 'hr' as const,
+                  department: 'Human Resources',
+                  designation: emp.designation === 'Senior Full Stack Engineer' ? 'HR Specialist' : (emp.designation || 'HR Specialist'),
+                  designationAr: emp.designationAr || 'أخصائي الموارد البشرية',
+                  nameAr: emp.nameAr || 'دانش خان',
+                };
+              }
+              return emp;
+            });
+            setEmployees(sanitizedEmployees);
+            localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(sanitizedEmployees));
           }
           if (Array.isArray(syncData.locations)) {
             setOfficeLocations(syncData.locations);
@@ -788,6 +1001,24 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, currentEmployeeId);
   }, [currentEmployeeId]);
 
+  useEffect(() => {
+    if (employees && employees.length > 0) {
+      try {
+        localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
+      } catch {
+        // ignore
+      }
+    }
+  }, [employees]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEYS.AUTH_STATUS, isAuthenticated ? 'true' : 'false');
+    } catch {
+      // ignore
+    }
+  }, [isAuthenticated]);
+
   const DEFAULT_FALLBACK_USER: Employee = {
     id: 'emp_admin',
     name: 'Administrator',
@@ -825,10 +1056,11 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify([DEFAULT_HR_ADMIN_USER]));
       localStorage.setItem(STORAGE_KEYS.OFFICE_LOCATIONS, JSON.stringify([DEFAULT_HQ_LOCATION]));
       localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, DEFAULT_HR_ADMIN_USER.id);
+      localStorage.setItem(STORAGE_KEYS.AUTH_STATUS, 'false');
     } catch (err) {
       console.error('Error wiping system data:', err);
     }
-  }, []);
+  }, [setIsAuthenticated]);
 
   useEffect(() => {
     if (currentEmployee) {
@@ -836,8 +1068,25 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
   }, [currentEmployee]);
 
+  // If HR has disabled login access for the current user, terminate session
+  useEffect(() => {
+    if (isAuthenticated && currentEmployee?.loginAccessDisabled) {
+      setIsAuthenticated(false);
+      try {
+        localStorage.setItem(STORAGE_KEYS.AUTH_STATUS, 'false');
+      } catch {
+        // ignore
+      }
+    }
+  }, [isAuthenticated, currentEmployee?.loginAccessDisabled, setIsAuthenticated]);
+
   const setCurrentEmployeeId = (id: string) => {
     setCurrentEmployeeIdState(id);
+    try {
+      localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, id);
+    } catch {
+      // ignore
+    }
   };
 
   // User Activity Logger
@@ -896,6 +1145,194 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setActivityLogs([]);
     localStorage.removeItem(STORAGE_KEYS.ACTIVITY_LOGS);
   }, []);
+
+  // Proactive 50m Geofence Proximity Monitoring Engine
+  useEffect(() => {
+    if (!isAuthenticated || !currentEmployee || !currentCoords) return;
+
+    // Check if employee is already checked in for today
+    const todayStr = new Date().toISOString().split('T')[0];
+    const isAlreadyCheckedIn = attendanceRecords.some(
+      (rec) => rec.employeeId === currentEmployee.id && rec.date === todayStr && !!rec.checkInTime
+    );
+    if (isAlreadyCheckedIn) return;
+
+    const safeAllowedIds = Array.isArray(currentEmployee.allowedLocationIds) ? currentEmployee.allowedLocationIds : [];
+    const isGlobalAllowed =
+      safeAllowedIds.length === 0 ||
+      safeAllowedIds.includes('*') ||
+      safeAllowedIds.includes('all');
+
+    const authorizedLocations = officeLocations.filter((loc) => {
+      if (!loc.isActive) return false;
+      if (isGlobalAllowed) return true;
+      return safeAllowedIds.includes(loc.id);
+    });
+
+    if (authorizedLocations.length === 0) return;
+
+    for (const loc of authorizedLocations) {
+      const distToCenter = calculateDistanceMeters(
+        currentCoords.latitude,
+        currentCoords.longitude,
+        loc.latitude,
+        loc.longitude
+      );
+
+      // 50m proximity condition: distance to office boundary or center is <= 50m
+      const distToBoundary = Math.max(0, distToCenter - loc.radiusMeters);
+      const isWithin50Meters = distToBoundary <= 50 || distToCenter <= 50 || distToCenter <= loc.radiusMeters + 50;
+
+      if (isWithin50Meters) {
+        const now = Date.now();
+        const lastAlert = lastProximityAlertRef.current[loc.id] || 0;
+
+        // 10-minute cooldown (600,000 ms) per location to prevent spammed alerts
+        if (now - lastAlert > 600000) {
+          lastProximityAlertRef.current[loc.id] = now;
+          const formattedDist = Math.round(distToCenter);
+
+          // 1. Trigger tactile haptic vibration pattern
+          hapticProximityReminder();
+
+          // 2. Play notification sound chime
+          try {
+            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+            if (AudioContextClass) {
+              const ctx = new AudioContextClass();
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(659.25, ctx.currentTime);
+              gain.gain.setValueAtTime(0.12, ctx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.start();
+              osc.stop(ctx.currentTime + 0.35);
+            }
+          } catch (e) {
+            // Ignore audio context autoplay restriction errors
+          }
+
+          // 3. Fire Local Push Web System Alert if allowed by browser
+          if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+            try {
+              new Notification(`🏢 Office Geofence Nearby: ${loc.name}`, {
+                body: `You are within ${formattedDist}m of ${loc.name}. Tap to check in now!`,
+                icon: '/icon.png',
+                tag: `geofence-prox-${loc.id}`,
+              });
+            } catch (e) {
+              console.warn('System push notification error:', e);
+            }
+          }
+
+          // 4. In-App Notification Log
+          const notifItem: AppNotification = {
+            id: `prox_notif_${now}`,
+            recipientEmployeeId: currentEmployee.id,
+            employeeId: currentEmployee.id,
+            title: `🏢 50m Geofence Nearby (${loc.name})`,
+            message: `You are within ${formattedDist}m of ${loc.name}. Tap to check in now!`,
+            timestamp: new Date().toISOString(),
+            isRead: false,
+            type: 'info',
+          };
+          setNotifications((prev) => [notifItem, ...prev]);
+
+          // 5. In-App Proactive Banner Card State
+          setProximityAlert({
+            location: loc,
+            distanceMeters: formattedDist,
+            timestamp: now,
+          });
+
+          // 6. Record in User Audit Log
+          logUserActivity({
+            employeeId: currentEmployee.id,
+            employeeName: currentEmployee.name,
+            employeeCode: currentEmployee.employeeCode,
+            department: currentEmployee.department,
+            type: 'location_verify',
+            category: 'attendance',
+            title: '50m Geofence Proximity Triggered',
+            description: `Proactive 50m check-in alert & haptic vibration triggered for "${loc.name}" (${formattedDist}m away).`,
+            status: 'info',
+            locationName: loc.name,
+          });
+
+          break; // Trigger for nearest office location
+        }
+      }
+    }
+  }, [currentCoords, isAuthenticated, currentEmployee, attendanceRecords, officeLocations, logUserActivity]);
+
+  // Test trigger for manual verification in UI
+  const triggerTestProximityAlert = useCallback(() => {
+    const targetLoc = officeLocations.find((l) => l.isActive) || officeLocations[0] || DEFAULT_HQ_LOCATION;
+    const testDist = 35; // 35 meters away
+
+    // Auto-request push permission if default
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().then((perm) => setPushNotificationPermission(perm)).catch(() => {});
+    }
+
+    // 1. Tactile Haptic Vibration
+    hapticProximityReminder();
+
+    // 2. Audio Chime
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        const ctx = new AudioContextClass();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(659.25, ctx.currentTime);
+        gain.gain.setValueAtTime(0.15, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.4);
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // 3. System Push Notification
+    if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      try {
+        new Notification(`🏢 Office Geofence Proximity Test (${targetLoc.name})`, {
+          body: `Test Alert: You are ${testDist}m from ${targetLoc.name}. Remember to check in!`,
+          icon: '/icon.png',
+          tag: 'test-geofence-prox',
+        });
+      } catch (e) {
+        console.warn('Test push notification failed:', e);
+      }
+    }
+
+    const now = Date.now();
+    const notifItem: AppNotification = {
+      id: `prox_test_${now}`,
+      recipientEmployeeId: currentEmployee?.id || 'emp_01',
+      employeeId: currentEmployee?.id || 'emp_01',
+      title: `🏢 Test: 50m Geofence Proximity Alert`,
+      message: `You are ${testDist}m away from ${targetLoc.name}. Don't forget to check in!`,
+      timestamp: new Date().toISOString(),
+      isRead: false,
+      type: 'info',
+    };
+    setNotifications((prev) => [notifItem, ...prev]);
+
+    setProximityAlert({
+      location: targetLoc,
+      distanceMeters: testDist,
+      timestamp: now,
+    });
+  }, [officeLocations, currentEmployee]);
 
   const login = (
     identifier: string,
@@ -1076,7 +1513,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           isDeviceMismatch: true,
           registeredDevice: matched.deviceBinding,
           currentDevice: activeDev,
-          platformUsed: 'mobile',
+          platformUsed: 'mobile' as const,
           message: `1-Mobile-Device Policy: Your account is locked to mobile phone "${boundDevName}" (bound on ${boundDateStr}). Mobile sign-in is restricted to 1 device. Please contact HR to reset your mobile device, or sign in from your desktop workstation.`,
         };
       } else {
@@ -1166,7 +1603,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       message: `Welcome, ${matched.name}!`,
       currentDevice: activeDev,
       registeredDevice: matched.deviceBinding || activeDev,
-      platformUsed: isMobileSession ? 'mobile' : 'desktop',
+      platformUsed: (isMobileSession ? 'mobile' : 'desktop') as 'mobile' | 'desktop',
     };
   };
 
@@ -1227,7 +1664,10 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   );
 
   // Check-In Action: Retains FIRST Check-In of the day while recording punch
-  const markCheckIn = (notes?: string): PunchActionResult => {
+  const markCheckIn = (
+    notes?: string,
+    options?: { biometricVerified?: boolean; biometricType?: 'face' | 'fingerprint' }
+  ): PunchActionResult => {
     const geofenceCheck = checkGeofenceStatus(
       currentCoords,
       officeLocations,
@@ -1283,6 +1723,8 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       isGeofenceValid: true,
       status: existingRecord?.status === 'completed' ? 'active' : (isLate ? 'late' : 'active'),
       deviceInfo: isUsingRealGPS ? 'Verified Real Device GPS' : 'Simulated Mobile GPS',
+      biometricVerified: options?.biometricVerified || existingRecord?.biometricVerified,
+      biometricType: options?.biometricType || existingRecord?.biometricType,
       notes: notes
         ? (existingRecord?.notes ? `${existingRecord.notes} | In: ${notes}` : notes)
         : (existingRecord?.notes || (isLate ? 'Late check-in recorded' : 'Standard check-in')),
@@ -1291,9 +1733,40 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     // Optimistic UI state update
     setAttendanceRecords((prev) => [newRecord, ...prev.filter((r) => !(r.employeeId === currentEmployee.id && r.date === todayStr))]);
 
+    const isOfflineMode = typeof navigator !== 'undefined' && (!navigator.onLine || !isOnline);
+
+    if (isOfflineMode) {
+      enqueuePunch(newRecord, 'check_in', options);
+      setPendingOfflinePunches(getOfflineQueue());
+
+      // Update employee status locally
+      const updatedEmployee = { ...currentEmployee, todayStatus: 'present' as const };
+      setEmployees((prev) =>
+        prev.map((emp) => (emp.id === currentEmployee.id ? updatedEmployee : emp))
+      );
+
+      return {
+        success: true,
+        isOfflineQueued: true,
+        message: isReCheckIn
+          ? `OFFLINE PUNCH CAPTURED! Check-IN recorded locally at ${formattedTime}. Saved to queue & will auto-sync when online.`
+          : `OFFLINE PUNCH CAPTURED! Checked in at ${geofenceCheck.activeAuthorizedLocation.name} (${formattedTime}). Saved to offline queue.`,
+        punchType: 'check_in',
+        punchTime: timeStr,
+        punchTimeFormatted: formattedTime,
+        locationName: geofenceCheck.activeAuthorizedLocation.name,
+        expectedOutTime: expectedOutTimeFormatted,
+        accuracy: Math.round(currentCoords.accuracy),
+        biometricVerified: options?.biometricVerified,
+        biometricType: options?.biometricType,
+      };
+    }
+
     // Persist to Cloud Firestore
     firestoreService.saveAttendanceRecord(newRecord).catch((err) => {
-      console.error('Error saving check-in to Firestore:', err);
+      console.warn('Network/Firestore error during check-in, enqueueing offline:', err);
+      enqueuePunch(newRecord, 'check_in', options);
+      setPendingOfflinePunches(getOfflineQueue());
     });
 
     // Record Activity Log
@@ -1305,7 +1778,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       type: 'check_in',
       category: 'punch',
       title: isReCheckIn ? `Check-In Updated (First In: ${firstCheckInTime})` : `Checked In (${isLate ? 'Late Entry' : 'On Time'})`,
-      description: `Punched in at ${geofenceCheck.activeAuthorizedLocation.name} (${formattedTime}). System retained First Check-In (${firstCheckInTime}) for work day calculation.`,
+      description: `Punched in at ${geofenceCheck.activeAuthorizedLocation.name} (${formattedTime}). System retained First Check-In (${firstCheckInTime}) for work day calculation.${options?.biometricVerified ? ' [Verified via Face ID]' : ''}`,
       status: isLate ? 'warning' : 'success',
       locationName: geofenceCheck.activeAuthorizedLocation.name,
       deviceInfo: isUsingRealGPS ? 'Verified Real Device GPS' : 'Simulated Mobile GPS',
@@ -1315,6 +1788,8 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         notes: newRecord.notes,
         isLate,
         firstCheckInTime,
+        biometricVerified: options?.biometricVerified,
+        biometricType: options?.biometricType,
       },
     });
 
@@ -1329,18 +1804,23 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       success: true,
       message: isReCheckIn
         ? `Check-IN recorded at ${geofenceCheck.activeAuthorizedLocation.name}! (First In: ${firstCheckInTime} retained)`
-        : `You have successfully punched in at ${geofenceCheck.activeAuthorizedLocation.name}`,
+        : `You have successfully punched in at ${geofenceCheck.activeAuthorizedLocation.name}${options?.biometricVerified ? ' with Face ID verification' : ''}`,
       punchType: 'check_in',
       punchTime: timeStr,
       punchTimeFormatted: formattedTime,
       locationName: geofenceCheck.activeAuthorizedLocation.name,
       expectedOutTime: expectedOutTimeFormatted,
       accuracy: Math.round(currentCoords.accuracy),
+      biometricVerified: options?.biometricVerified,
+      biometricType: options?.biometricType,
     };
   };
 
   // Check-Out Action: Retains LAST Check-Out of the day & calculates work day from FIRST Check-In to LAST Check-Out
-  const markCheckOut = (notes?: string): PunchActionResult => {
+  const markCheckOut = (
+    notes?: string,
+    options?: { biometricVerified?: boolean; biometricType?: 'face' | 'fingerprint' }
+  ): PunchActionResult => {
     const geofenceCheck = checkGeofenceStatus(
       currentCoords,
       officeLocations,
@@ -1393,6 +1873,8 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       status: durationMins >= 480 ? 'completed' : durationMins >= 240 ? 'half_day' : 'completed',
       workDurationMinutes: durationMins,
       totalHoursWorked: Math.round((durationMins / 60) * 10) / 10,
+      biometricVerified: options?.biometricVerified || existingRecord?.biometricVerified,
+      biometricType: options?.biometricType || existingRecord?.biometricType,
       notes: notes ? (existingRecord?.notes ? `${existingRecord.notes} | Out: ${notes}` : notes) : existingRecord?.notes,
     };
 
@@ -1401,8 +1883,33 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       ...prev.filter((r) => !(r.employeeId === currentEmployee.id && r.date === todayStr)),
     ]);
 
+    const isOfflineMode = typeof navigator !== 'undefined' && (!navigator.onLine || !isOnline);
+
+    if (isOfflineMode) {
+      enqueuePunch(updatedRecord, 'check_out', options);
+      setPendingOfflinePunches(getOfflineQueue());
+
+      return {
+        success: true,
+        isOfflineQueued: true,
+        message: `OFFLINE PUNCH CAPTURED! Check-OUT recorded locally at ${formattedTime}. Saved to queue & will auto-sync when online.`,
+        punchType: 'check_out',
+        punchTime: timeStr,
+        punchTimeFormatted: formattedTime,
+        locationName: locName,
+        duration: durationFormatted,
+        accuracy: Math.round(currentCoords.accuracy),
+        biometricVerified: options?.biometricVerified,
+        biometricType: options?.biometricType,
+      };
+    }
+
     // Save to Cloud Firestore
-    firestoreService.saveAttendanceRecord(updatedRecord).catch(console.error);
+    firestoreService.saveAttendanceRecord(updatedRecord).catch((err) => {
+      console.warn('Network/Firestore error during check-out, enqueueing offline:', err);
+      enqueuePunch(updatedRecord, 'check_out', options);
+      setPendingOfflinePunches(getOfflineQueue());
+    });
 
     // Record Activity Log
     logUserActivity({
@@ -1413,7 +1920,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       type: 'check_out',
       category: 'punch',
       title: `Checked Out (Last Out: ${timeStr})`,
-      description: `Punched out at ${locName} (${formattedTime}). Full workday calculated from First In (${firstCheckInTime}) to Last Out (${timeStr}): ${durationFormatted}.`,
+      description: `Punched out at ${locName} (${formattedTime}). Full workday calculated from First In (${firstCheckInTime}) to Last Out (${timeStr}): ${durationFormatted}.${options?.biometricVerified ? ' [Verified via Face ID]' : ''}`,
       status: 'info',
       locationName: locName,
       deviceInfo: isUsingRealGPS ? 'Verified Real Device GPS' : 'Simulated Mobile GPS',
@@ -1424,18 +1931,22 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         firstCheckInTime,
         lastCheckOutTime: timeStr,
         notes: updatedRecord.notes,
+        biometricVerified: options?.biometricVerified,
+        biometricType: options?.biometricType,
       },
     });
 
     return {
       success: true,
-      message: `Check-OUT recorded at ${locName}! Workday calculated from First In (${firstCheckInTime}) to Last Out (${timeStr}): ${durationFormatted}`,
+      message: `Check-OUT recorded at ${locName}! Workday calculated from First In (${firstCheckInTime}) to Last Out (${timeStr}): ${durationFormatted}${options?.biometricVerified ? ' (Face ID Verified)' : ''}`,
       punchType: 'check_out',
       punchTime: timeStr,
       punchTimeFormatted: formattedTime,
       locationName: locName,
       duration: durationFormatted,
       accuracy: Math.round(currentCoords.accuracy),
+      biometricVerified: options?.biometricVerified,
+      biometricType: options?.biometricType,
     };
   };
 
@@ -1885,7 +2396,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const pendingManagerLeaves = (leaveRequests || []).filter((req) => {
     if (!req || req.status !== 'pending') return false;
     if (req.approvalRequired === 'hr_only') return false;
-    return req.currentStage === 'pending_manager' || (!req.currentStage && req.approvalRequired !== 'hr_only');
+    return req.currentStage === 'pending_manager' || !req.currentStage;
   });
 
   const pendingHRLeaves = (leaveRequests || []).filter((req) => {
@@ -2621,6 +3132,11 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         myActivityLogs,
         logUserActivity,
         clearActivityLogs,
+        isOnline,
+        offlineQueueCount: pendingOfflinePunches.length,
+        pendingOfflinePunches,
+        syncPendingOfflinePunches,
+        clearOfflinePunchQueue,
         currentCoords,
         isUsingRealGPS,
         gpsError,
@@ -2631,6 +3147,11 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setManualLocation,
         enableRealGPS,
         refreshGPSPosition,
+        proximityAlert,
+        dismissProximityAlert,
+        triggerTestProximityAlert,
+        pushNotificationPermission,
+        requestPushNotificationPermission,
         markCheckIn,
         markCheckOut,
         todayRecord,

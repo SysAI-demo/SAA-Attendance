@@ -2,17 +2,33 @@
 import { Request, Response, NextFunction } from 'express';
 import { GeoCoordinates, OfficeLocation, Employee } from '../src/types';
 
-// Rate Limiter: In-memory sliding window
+// Rate Limiter: In-memory sliding window keyed by user/device or IP
 interface RateLimitEntry {
   count: number;
   resetTime: number;
 }
 const rateLimitMap = new Map<string, RateLimitEntry>();
 
-export function rateLimiter(maxRequests: number = 60, windowMs: number = 60000) {
+// Periodic garbage collection to prevent memory leaks in 200+ user environments
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of rateLimitMap.entries()) {
+    if (now > entry.resetTime) {
+      rateLimitMap.delete(key);
+    }
+  }
+}, 120000);
+
+export function rateLimiter(maxRequests: number = 120, windowMs: number = 60000) {
   return (req: Request, res: Response, next: NextFunction) => {
-    const ip = req.ip || req.socket.remoteAddress || 'unknown';
-    const key = `${ip}:${req.path}`;
+    // Key by client deviceId or employeeId first (supports 200+ users on corporate NAT/Wi-Fi sharing single IP)
+    const clientIdentifier =
+      (req.body && (req.body.employeeId || req.body.device?.deviceId)) ||
+      (req.headers['x-user-id'] as string) ||
+      req.ip ||
+      req.socket.remoteAddress ||
+      'unknown';
+    const key = `${clientIdentifier}:${req.path}`;
     const now = Date.now();
 
     const entry = rateLimitMap.get(key);

@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAttendance } from '../context/AttendanceContext';
 import { checkGeofenceStatus, formatDistance, calculateExpectedOutTime } from '../utils/geoUtils';
+import {
+  hapticCheckInClick,
+  hapticCheckInSuccess,
+  hapticCheckOutClick,
+  hapticCheckOutSuccess,
+  hapticError,
+} from '../utils/haptics';
 import { GeofenceMap } from './GeofenceMap';
 import { LocationPermissionPrompt } from './LocationPermissionPrompt';
 import { PunchFeedbackCard, PunchFeedbackState } from './PunchFeedbackCard';
@@ -60,27 +67,35 @@ export const MobileAttendanceTerminal: React.FC = () => {
   );
 
   const handleCheckIn = () => {
+    hapticCheckInClick();
     setFeedback(null);
     const res = markCheckIn(notes);
+    if (res.success) {
+      hapticCheckInSuccess();
+      setNotes('');
+    } else {
+      hapticError();
+    }
     setFeedback({
       type: res.success ? 'success' : 'error',
       ...res,
     });
-    if (res.success) {
-      setNotes('');
-    }
   };
 
   const handleCheckOut = () => {
+    hapticCheckOutClick();
     setFeedback(null);
     const res = markCheckOut(notes);
+    if (res.success) {
+      hapticCheckOutSuccess();
+      setNotes('');
+    } else {
+      hapticError();
+    }
     setFeedback({
       type: res.success ? 'success' : 'error',
       ...res,
     });
-    if (res.success) {
-      setNotes('');
-    }
   };
 
   // Calculate live active shift duration if checked in
@@ -151,7 +166,7 @@ export const MobileAttendanceTerminal: React.FC = () => {
                   className="text-[10px] bg-[#ebe1d2] text-stone-700 border border-[#ded4c5] px-1.5 py-0.5 rounded flex items-center gap-1 font-medium"
                 >
                   <Building2 className="w-2.5 h-2.5 text-stone-600" />
-                  {loc.name.split(' ')[0]}
+                  {loc.name ? loc.name.split(' ')[0] : 'Office'}
                 </span>
               ))}
             </div>
@@ -231,7 +246,7 @@ export const MobileAttendanceTerminal: React.FC = () => {
                 >
                   <div className="font-semibold truncate text-[11px] flex items-center gap-1">
                     <span className={`w-1.5 h-1.5 rounded-full ${isAllowed ? 'bg-emerald-400' : 'bg-stone-400'}`}></span>
-                    {loc.name.split(' ')[0]}
+                    {loc.name ? loc.name.split(' ')[0] : 'Office'}
                   </div>
                   <span className={`text-[10px] truncate ${isAllowed ? 'text-stone-300' : 'text-stone-500'}`}>
                     {isAllowed ? '✓ Authorized' : '🚫 Unauthorized'}

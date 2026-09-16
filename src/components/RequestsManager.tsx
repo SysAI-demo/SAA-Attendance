@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useAttendance } from '../context/AttendanceContext';
+import { useLanguage } from '../context/LanguageContext';
 import {
   LeaveType,
   PermissionType,
@@ -43,6 +44,7 @@ import {
 } from 'lucide-react';
 
 export const RequestsManager: React.FC = () => {
+  const { t, isRTL } = useLanguage();
   const {
     currentEmployee,
     leaveRequests,
@@ -67,10 +69,10 @@ export const RequestsManager: React.FC = () => {
 
   const isManager = currentEmployee.role === 'manager' || currentEmployee.role === 'admin' || isCurrentHR;
 
-  // Active Tab
+  // Active Tab - Default to Leave Request on initial page open
   const [activeTab, setActiveTab] = useState<
     'apply_leave' | 'apply_permission' | 'my_requests' | 'manager_approvals'
-  >(isManager ? 'manager_approvals' : 'apply_leave');
+  >('apply_leave');
 
   useEffect(() => {
     if (!isManager && activeTab === 'manager_approvals') {
@@ -103,7 +105,6 @@ export const RequestsManager: React.FC = () => {
   const [startDate, setStartDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState<string>('');
-  const [emergencyContact, setEmergencyContact] = useState<string>('');
   const [attachedDoc, setAttachedDoc] = useState<LeaveDocumentAttachment | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState<boolean>(false);
   const [formValidationError, setFormValidationError] = useState<string | null>(null);
@@ -317,7 +318,6 @@ export const RequestsManager: React.FC = () => {
       totalDays: total,
       reason: description.trim(),
       description: description.trim(),
-      emergencyContact: emergencyContact.trim() || undefined,
       documentAttachment: attachedDoc || undefined,
       documentName: attachedDoc?.name,
       documentUrl: attachedDoc?.dataUrl,
@@ -337,7 +337,6 @@ export const RequestsManager: React.FC = () => {
 
     // Reset Form
     setDescription('');
-    setEmergencyContact('');
     setAttachedDoc(null);
     setFormValidationError(null);
 
@@ -439,28 +438,37 @@ export const RequestsManager: React.FC = () => {
   };
 
   return (
-    <div id="requests-manager-view" className="max-w-5xl mx-auto space-y-6 pb-12">
+    <div id="requests-manager-view" className="max-w-5xl mx-auto space-y-3 sm:space-y-3.5 pb-6">
       {/* Top Banner / Notification Toast */}
       {successToast && (
-        <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl text-emerald-900 text-xs sm:text-sm flex items-center gap-2 shadow-xs">
-          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-          <span>{successToast}</span>
+        <div className="bg-emerald-50 border border-emerald-200 px-3.5 py-2.5 rounded-xl text-emerald-900 text-xs flex items-center justify-between gap-2 shadow-xs">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{successToast}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSuccessToast(null)}
+            className="text-emerald-700 hover:text-emerald-900 text-xs cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 
       {/* Header and Tab Selector */}
-      <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl p-3 sm:p-4 shadow-xs flex flex-wrap items-center justify-center gap-2.5 sm:gap-3">
+      <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl p-1.5 sm:p-2 shadow-xs flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
         {/* Bubble 1: Leave Request */}
         <button
           type="button"
           onClick={() => setActiveTab('apply_leave')}
-          className={`px-5 py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+          className={`px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
             activeTab === 'apply_leave'
-              ? 'bg-stone-900 text-stone-50 shadow-md scale-[1.02] border border-stone-900'
+              ? 'bg-stone-900 text-stone-50 shadow-xs border border-stone-900'
               : 'bg-white text-stone-800 hover:bg-[#ede4d6] border border-[#ded4c5]'
           }`}
         >
-          <Calendar className={`w-4 h-4 shrink-0 ${activeTab === 'apply_leave' ? 'text-amber-300' : 'text-amber-900'}`} />
+          <Calendar className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'apply_leave' ? 'text-amber-300' : 'text-amber-900'}`} />
           <span>Leave Request</span>
         </button>
 
@@ -468,13 +476,13 @@ export const RequestsManager: React.FC = () => {
         <button
           type="button"
           onClick={() => setActiveTab('apply_permission')}
-          className={`px-5 py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+          className={`px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
             activeTab === 'apply_permission'
-              ? 'bg-stone-900 text-stone-50 shadow-md scale-[1.02] border border-stone-900'
+              ? 'bg-stone-900 text-stone-50 shadow-xs border border-stone-900'
               : 'bg-white text-stone-800 hover:bg-[#ede4d6] border border-[#ded4c5]'
           }`}
         >
-          <Clock className={`w-4 h-4 shrink-0 ${activeTab === 'apply_permission' ? 'text-amber-300' : 'text-amber-900'}`} />
+          <Clock className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'apply_permission' ? 'text-amber-300' : 'text-amber-900'}`} />
           <span>Permission Request</span>
         </button>
 
@@ -482,13 +490,13 @@ export const RequestsManager: React.FC = () => {
         <button
           type="button"
           onClick={() => setActiveTab('my_requests')}
-          className={`px-5 py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+          className={`px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
             activeTab === 'my_requests'
-              ? 'bg-stone-900 text-stone-50 shadow-md scale-[1.02] border border-stone-900'
+              ? 'bg-stone-900 text-stone-50 shadow-xs border border-stone-900'
               : 'bg-white text-stone-800 hover:bg-[#ede4d6] border border-[#ded4c5]'
           }`}
         >
-          <FileText className={`w-4 h-4 shrink-0 ${activeTab === 'my_requests' ? 'text-amber-300' : 'text-amber-900'}`} />
+          <FileText className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'my_requests' ? 'text-amber-300' : 'text-amber-900'}`} />
           <span>Request History</span>
         </button>
 
@@ -497,16 +505,16 @@ export const RequestsManager: React.FC = () => {
           <button
             type="button"
             onClick={() => setActiveTab('manager_approvals')}
-            className={`px-5 py-2.5 rounded-full text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+            className={`px-3.5 py-1.5 sm:py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
               activeTab === 'manager_approvals'
-                ? 'bg-amber-950 text-amber-50 shadow-md scale-[1.02] border border-amber-950'
+                ? 'bg-amber-950 text-amber-50 shadow-xs border border-amber-950'
                 : 'bg-amber-50 text-amber-950 hover:bg-amber-100 border border-amber-300'
             }`}
           >
-            <UserCheck className={`w-4 h-4 shrink-0 ${activeTab === 'manager_approvals' ? 'text-amber-300' : 'text-amber-900'}`} />
+            <UserCheck className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'manager_approvals' ? 'text-amber-300' : 'text-amber-900'}`} />
             <span>Pending Requests</span>
             {pendingTotalCount > 0 && (
-              <span className="bg-amber-500 text-stone-950 font-extrabold px-2 py-0.5 rounded-full text-[10px] ml-0.5">
+              <span className="bg-amber-500 text-stone-950 font-extrabold px-1.5 py-0.2 rounded-full text-[10px] ml-0.5">
                 {pendingTotalCount}
               </span>
             )}
@@ -515,53 +523,47 @@ export const RequestsManager: React.FC = () => {
       </div>
 
       {/* ============================================================ */}
-      {/* TAB 1: APPLY FOR LEAVE (Leave Type, Duration, Document, Desc) */}
+      {/* TAB 1: APPLY FOR LEAVE (Optimized Compact Single-Page Layout) */}
       {/* ============================================================ */}
       {activeTab === 'apply_leave' && (
-        <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl p-4 sm:p-6 shadow-xs space-y-6">
-          <div className="border-b border-[#ded4c5] pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-bold text-stone-900 flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-stone-700" />
-                <span>Leave Application</span>
-              </h2>
-              <p className="text-xs text-stone-600">
-                Select your permitted leave category, set the duration, upload supporting documentation, and provide description details.
-              </p>
+        <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl p-3.5 sm:p-4 shadow-xs space-y-3">
+          {/* Compact Top Header Bar */}
+          <div className="border-b border-[#ded4c5] pb-2.5 flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-stone-900 text-stone-100 flex items-center justify-center shadow-2xs shrink-0">
+                <Calendar className="w-3.5 h-3.5 text-amber-300" />
+              </div>
+              <div>
+                <h2 className="text-sm sm:text-base font-bold text-stone-900 leading-tight">
+                  Leave Application
+                </h2>
+                <p className="text-[11px] text-stone-500 leading-tight hidden sm:block">
+                  Submit time-off requests according to your grade entitlements.
+                </p>
+              </div>
             </div>
 
-            {/* Assigned Grade & Policy Scope Badge */}
+            {/* Assigned Grade & Policy Scope Badge (Compact) */}
             {employeeGrade && (
-              <div className="bg-white border border-[#ded4c5] px-3 py-2 rounded-xl flex items-center gap-2 shrink-0 shadow-2xs">
-                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: employeeGrade.color || '#0284c7' }} />
-                <div className="text-left">
-                  <span className="text-[10px] text-stone-500 font-semibold block uppercase">
-                    Your Assigned Grade:
-                  </span>
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-stone-900">
-                    <span className="font-mono">{employeeGrade.gradeCode}</span>
-                    <span>•</span>
-                    <span>{employeeGrade.gradeName}</span>
-                    {employeeGrade.gradeNameAr && (
-                      <span className="text-[11px] text-stone-600 font-medium" dir="rtl">
-                        ({employeeGrade.gradeNameAr})
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <span className="text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full ml-1 whitespace-nowrap">
+              <div className="bg-white border border-[#ded4c5] px-2.5 py-1 rounded-xl flex items-center gap-1.5 shrink-0 shadow-2xs text-xs">
+                <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: employeeGrade.color || '#0284c7' }} />
+                <span className="text-[10px] text-stone-500 font-semibold uppercase">Grade:</span>
+                <span className="font-bold text-stone-900 font-mono">{employeeGrade.gradeCode}</span>
+                <span className="text-stone-300">•</span>
+                <span className="font-medium text-stone-700 truncate max-w-[110px]">{employeeGrade.gradeName}</span>
+                <span className="text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.2 rounded-full ml-0.5">
                   {allowedLeaveDefs.length} Allowed
                 </span>
               </div>
             )}
           </div>
 
-          <form onSubmit={handleLeaveSubmit} className="space-y-6">
+          <form onSubmit={handleLeaveSubmit} className="space-y-3">
             {/* Form Validation Error Banner */}
             {formValidationError && (
-              <div className="bg-rose-50 border border-rose-300 rounded-xl p-3.5 flex items-start justify-between gap-2 text-xs text-rose-900">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <div className="bg-rose-50 border border-rose-300 rounded-xl px-3 py-2 flex items-start justify-between gap-2 text-xs text-rose-900">
+                <div className="flex items-start gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
                   <span>{formValidationError}</span>
                 </div>
                 <button
@@ -569,348 +571,309 @@ export const RequestsManager: React.FC = () => {
                   onClick={() => setFormValidationError(null)}
                   className="text-rose-500 hover:text-rose-900 cursor-pointer"
                 >
-                  <X className="w-4 h-4" />
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
 
-            {/* 1. SELECT LEAVE TYPE (Drop Down - Filtered Strictly by Assigned Grade) */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <label htmlFor="leave-type-select" className="text-xs font-bold text-stone-900 uppercase tracking-wide flex items-center gap-1.5">
-                  <span>1. Select Leave Type</span>
-                  <span className="text-rose-600 font-bold">*</span>
-                  <span className="text-[10px] font-normal text-stone-500 lowercase">
-                    (filtered by grade {employeeGrade?.gradeCode || ''})
-                  </span>
-                </label>
-                {getLeaveBalanceByType(leaveType) !== null && (
-                  <span className="text-xs font-semibold text-stone-600 bg-white border border-[#ded4c5] px-2.5 py-0.5 rounded-full">
-                    Available Balance:{' '}
-                    <strong className="font-mono text-stone-900">
-                      {getLeaveBalanceByType(leaveType)} Days
-                    </strong>
-                  </span>
-                )}
-              </div>
-
-              {allowedLeaveDefs.length > 0 ? (
-                <select
-                  id="leave-type-select"
-                  value={leaveType}
-                  onChange={(e) => {
-                    setLeaveType(e.target.value as LeaveType);
-                    setFormValidationError(null);
-                  }}
-                  className="w-full bg-white border border-[#ded4c5] rounded-xl px-3.5 py-2.5 text-xs sm:text-sm text-stone-900 focus:border-stone-800 focus:outline-hidden font-medium cursor-pointer shadow-2xs"
-                >
-                  {allowedLeaveDefs.map((def) => {
-                    let optValue: LeaveType = 'casual';
-                    if (def.code === 'CL') optValue = 'casual';
-                    else if (def.code === 'SL') optValue = 'sick';
-                    else if (def.code === 'AL') optValue = 'annual';
-                    else if (def.code === 'ML') optValue = 'maternity';
-                    else if (def.code === 'PL') optValue = 'paternity';
-                    else if (def.code === 'BL') optValue = 'bereavement';
-                    else if (def.code === 'UL' || def.code === 'LOP') optValue = 'unpaid';
-                    else if (def.code === 'EL' || def.code === 'EML') optValue = 'emergency';
-
-                    const bal = getLeaveBalanceByType(optValue);
-                    const balLabel = bal !== null ? ` — ${bal} Days Balance Available` : '';
-                    const quotaLabel = !balLabel && def.annualQuotaDays ? ` — ${def.annualQuotaDays} Days / Year Quota` : '';
-
-                    return (
-                      <option key={def.id} value={optValue}>
-                        {def.code} — {def.name} {def.nameAr ? `(${def.nameAr})` : ''} {balLabel || quotaLabel}
-                      </option>
-                    );
-                  })}
-                </select>
-              ) : (
-                <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 text-xs text-amber-900 flex items-center gap-3">
-                  <ShieldAlert className="w-5 h-5 text-amber-700 shrink-0" />
-                  <div>
-                    <strong className="block font-bold">No Leave Types Configured for Your Grade</strong>
-                    <p className="text-amber-800 text-[11px] mt-0.5">
-                      Your assigned job grade ({employeeGrade?.gradeName || 'Standard'} / {employeeGrade?.gradeCode}) currently has no permitted leave policies enabled. Please ask HR to add allowed leaves under Define Grades.
-                    </p>
+            {/* 2-Column Responsive Layout: Left (Type, Dates, Reason) + Right (Doc, Summary, Submit) */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-3.5 items-start">
+              {/* LEFT COLUMN: Inputs (7 cols) */}
+              <div className="lg:col-span-7 space-y-2.5">
+                {/* 1. SELECT LEAVE TYPE */}
+                <div className="space-y-1.5 bg-white border border-[#ded4c5] p-3 rounded-xl shadow-2xs">
+                  <div className="flex items-center justify-between flex-wrap gap-1">
+                    <label htmlFor="leave-type-select" className="text-xs font-bold text-stone-900 uppercase tracking-wide flex items-center gap-1">
+                      <span>1. Leave Type</span>
+                      <span className="text-rose-600 font-bold">*</span>
+                    </label>
+                    {getLeaveBalanceByType(leaveType) !== null && (
+                      <span className="text-[11px] font-semibold text-stone-700 bg-[#ede4d6] border border-[#ded4c5] px-2 py-0.5 rounded-md">
+                        Available:{' '}
+                        <strong className="font-mono text-stone-900">
+                          {getLeaveBalanceByType(leaveType)} Days
+                        </strong>
+                      </span>
+                    )}
                   </div>
-                </div>
-              )}
 
-              {/* Policy Badges for Selected Leave */}
-              {activeLeaveDef && (
-                <div className="bg-white border border-[#ded4c5] p-2.5 rounded-xl flex flex-wrap items-center gap-2 text-[11px] text-stone-700">
-                  <span className="font-semibold text-stone-500">Policy Rules:</span>
-                  <span className="bg-[#ede4d6] border border-[#ded4c5] px-2 py-0.5 rounded-md font-medium">
-                    Duration: {activeLeaveDef.minDurationDays ?? 0.5}d min – {activeLeaveDef.maxDurationDays ?? 14}d max
-                  </span>
-                  <span className="bg-[#ede4d6] border border-[#ded4c5] px-2 py-0.5 rounded-md font-medium">
-                    {activeLeaveDef.allowAfterDays === 0
-                      ? 'Eligible: Day 1'
-                      : `Eligible after ${activeLeaveDef.allowAfterDays} days`}
-                  </span>
-                  <span className="bg-blue-50 border border-blue-200 text-blue-800 px-2 py-0.5 rounded-md font-semibold">
-                    Approval:{' '}
-                    {activeLeaveDef.approvalBy === 'both'
-                      ? 'Manager & HR'
-                      : activeLeaveDef.approvalBy === 'hr_only'
-                      ? 'HR Only'
-                      : 'Manager Only'}
-                  </span>
-                  {activeLeaveDef.attachmentMandatory ? (
-                    <span className="bg-rose-50 border border-rose-200 text-rose-800 px-2 py-0.5 rounded-md font-bold flex items-center gap-1">
-                      <Paperclip className="w-3 h-3 text-rose-600" />
-                      <span>Proof Mandatory</span>
-                    </span>
+                  {allowedLeaveDefs.length > 0 ? (
+                    <select
+                      id="leave-type-select"
+                      value={leaveType}
+                      onChange={(e) => {
+                        setLeaveType(e.target.value as LeaveType);
+                        setFormValidationError(null);
+                      }}
+                      className="w-full bg-[#fcfaf7] border border-[#ded4c5] rounded-lg px-2.5 py-1.5 text-xs text-stone-900 focus:border-stone-800 focus:outline-hidden font-medium cursor-pointer shadow-2xs"
+                    >
+                      {allowedLeaveDefs.map((def) => {
+                        let optValue: LeaveType = 'casual';
+                        if (def.code === 'CL') optValue = 'casual';
+                        else if (def.code === 'SL') optValue = 'sick';
+                        else if (def.code === 'AL') optValue = 'annual';
+                        else if (def.code === 'ML') optValue = 'maternity';
+                        else if (def.code === 'PL') optValue = 'paternity';
+                        else if (def.code === 'BL') optValue = 'bereavement';
+                        else if (def.code === 'UL' || def.code === 'LOP') optValue = 'unpaid';
+                        else if (def.code === 'EL' || def.code === 'EML') optValue = 'emergency';
+
+                        const bal = getLeaveBalanceByType(optValue);
+                        const balLabel = bal !== null ? ` — ${bal}d Available` : '';
+                        const quotaLabel = !balLabel && def.annualQuotaDays ? ` — ${def.annualQuotaDays}d Quota` : '';
+
+                        return (
+                          <option key={def.id} value={optValue}>
+                            {def.code} — {def.name} {def.nameAr ? `(${def.nameAr})` : ''} {balLabel || quotaLabel}
+                          </option>
+                        );
+                      })}
+                    </select>
                   ) : (
-                    <span className="text-stone-400">Doc Optional</span>
+                    <div className="bg-amber-50 border border-amber-300 rounded-lg p-2.5 text-xs text-amber-900 flex items-center gap-2">
+                      <ShieldAlert className="w-4 h-4 text-amber-700 shrink-0" />
+                      <span className="text-[11px]">No permitted leave policies configured for your grade.</span>
+                    </div>
+                  )}
+
+                  {/* Compact Policy Badges for Selected Leave */}
+                  {activeLeaveDef && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[10px] text-stone-600">
+                      <span className="bg-[#ede4d6] border border-[#ded4c5] px-1.5 py-0.5 rounded font-medium">
+                        Limits: {activeLeaveDef.minDurationDays ?? 0.5}d min – {activeLeaveDef.maxDurationDays ?? 14}d max
+                      </span>
+                      <span className="bg-[#ede4d6] border border-[#ded4c5] px-1.5 py-0.5 rounded font-medium">
+                        {activeLeaveDef.allowAfterDays === 0 ? 'Eligible: Day 1' : `After ${activeLeaveDef.allowAfterDays}d`}
+                      </span>
+                      <span className="bg-blue-50 border border-blue-200 text-blue-800 px-1.5 py-0.5 rounded font-semibold">
+                        {activeLeaveDef.approvalBy === 'both' ? 'Manager & HR' : activeLeaveDef.approvalBy === 'hr_only' ? 'HR Only' : 'Manager'}
+                      </span>
+                      {activeLeaveDef.attachmentMandatory ? (
+                        <span className="bg-rose-50 border border-rose-200 text-rose-800 px-1.5 py-0.5 rounded font-bold flex items-center gap-0.5">
+                          <Paperclip className="w-2.5 h-2.5 text-rose-600" />
+                          <span>Proof Req.</span>
+                        </span>
+                      ) : (
+                        <span className="text-stone-400">Doc Optional</span>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
 
-            {/* 2. SELECT LEAVE DURATION (From Date and To Date Only) */}
-            <div className="space-y-3 pt-2 border-t border-[#ded4c5]">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-stone-900 uppercase tracking-wide flex items-center gap-1.5">
-                  <Calendar className="w-3.5 h-3.5 text-stone-700" />
-                  <span>2. Leave Duration (From & To Date)</span>
-                  <span className="text-rose-600 font-bold">*</span>
-                </label>
-                <span className="text-xs font-bold bg-[#ede4d6] border border-[#ded4c5] text-stone-900 px-3 py-0.5 rounded-full font-mono">
-                  Duration: {calculateDays()} {calculateDays() === 1 ? 'Day' : 'Days'}
-                </span>
-              </div>
-
-              {/* Date Inputs: From Date and To Date */}
-              <div className="bg-white border border-[#ded4c5] rounded-xl p-4 space-y-3 shadow-2xs">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label htmlFor="leave-from-date" className="text-xs font-medium text-stone-700">
-                      From Date *
+                {/* 2. DURATION (From Date & To Date) */}
+                <div className="space-y-1.5 bg-white border border-[#ded4c5] p-3 rounded-xl shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-stone-900 uppercase tracking-wide flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-stone-700" />
+                      <span>2. Leave Duration</span>
+                      <span className="text-rose-600 font-bold">*</span>
                     </label>
-                    <input
-                      id="leave-from-date"
-                      type="date"
-                      required
-                      value={startDate}
-                      onChange={(e) => {
-                        const newStart = e.target.value;
-                        setStartDate(newStart);
-                        if (endDate < newStart) {
-                          setEndDate(newStart);
-                        }
-                      }}
-                      className="w-full bg-[#f8f5ef] border border-[#ded4c5] rounded-lg px-3 py-2 text-xs sm:text-sm text-stone-900 focus:border-stone-800 focus:outline-hidden font-mono"
-                    />
+                    <span className="text-xs font-bold bg-[#ede4d6] border border-[#ded4c5] text-stone-900 px-2.5 py-0.5 rounded-full font-mono">
+                      {calculateDays()} {calculateDays() === 1 ? 'Day' : 'Days'}
+                    </span>
                   </div>
-                  <div className="space-y-1">
-                    <label htmlFor="leave-to-date" className="text-xs font-medium text-stone-700">
-                      To Date *
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-0.5">
+                      <label htmlFor="leave-from-date" className="text-[11px] font-medium text-stone-600">
+                        From Date *
+                      </label>
+                      <input
+                        id="leave-from-date"
+                        type="date"
+                        required
+                        value={startDate}
+                        onChange={(e) => {
+                          const newStart = e.target.value;
+                          setStartDate(newStart);
+                          if (endDate < newStart) {
+                            setEndDate(newStart);
+                          }
+                        }}
+                        className="w-full bg-[#fcfaf7] border border-[#ded4c5] rounded-lg px-2.5 py-1.5 text-xs text-stone-900 focus:border-stone-800 focus:outline-hidden font-mono"
+                      />
+                    </div>
+                    <div className="space-y-0.5">
+                      <label htmlFor="leave-to-date" className="text-[11px] font-medium text-stone-600">
+                        To Date *
+                      </label>
+                      <input
+                        id="leave-to-date"
+                        type="date"
+                        required
+                        min={startDate}
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                        className="w-full bg-[#fcfaf7] border border-[#ded4c5] rounded-lg px-2.5 py-1.5 text-xs text-stone-900 focus:border-stone-800 focus:outline-hidden font-mono"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. REASON & DESCRIPTION */}
+                <div className="space-y-1.5 bg-white border border-[#ded4c5] p-3 rounded-xl shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="leave-description-field" className="text-xs font-bold text-stone-900 uppercase tracking-wide flex items-center gap-1">
+                      <span>3. Reason & Handover</span>
+                      <span className="text-rose-600 font-bold">*</span>
                     </label>
-                    <input
-                      id="leave-to-date"
-                      type="date"
-                      required
-                      min={startDate}
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className="w-full bg-[#f8f5ef] border border-[#ded4c5] rounded-lg px-3 py-2 text-xs sm:text-sm text-stone-900 focus:border-stone-800 focus:outline-hidden font-mono"
-                    />
+                    <span className="text-[10px] text-stone-400 font-mono">
+                      {description.length} chars
+                    </span>
                   </div>
-                </div>
 
-                {/* Duration Summary Banner */}
-                <div className="p-2.5 bg-[#ede4d6] border border-[#ded4c5] rounded-lg flex items-center justify-between text-xs text-stone-800">
-                  <span className="flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5 text-stone-700" />
-                    <span>Calculated Total Working Days:</span>
-                  </span>
-                  <strong className="text-stone-900 font-mono text-sm">
-                    {calculateDays()} {calculateDays() === 1 ? 'Day' : 'Days'}
-                  </strong>
+                  <textarea
+                    id="leave-description-field"
+                    required
+                    rows={2}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    placeholder="State the reason for leave and handover arrangement..."
+                    className="w-full bg-[#fcfaf7] border border-[#ded4c5] rounded-lg p-2 text-xs text-stone-900 placeholder-stone-400 focus:border-stone-800 focus:outline-hidden resize-none"
+                  />
                 </div>
               </div>
-            </div>
 
-            {/* 3. ATTACH DOCUMENT FOR LEAVE REQUEST (Drag & Drop + Click to Upload) */}
-            <div className="space-y-3 pt-2 border-t border-[#ded4c5]">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-stone-900 uppercase tracking-wide flex items-center gap-1.5">
-                  <Paperclip className="w-3.5 h-3.5 text-stone-700" />
-                  <span>3. Attach Document for Leave Request</span>
-                  <span className="text-[11px] font-normal normal-case text-stone-500">
-                    (Medical slip, ticket, doctor note, or supporting certificate)
-                  </span>
-                </label>
-
-                {attachedDoc && (
-                  <span className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded flex items-center gap-1">
-                    <FileCheck className="w-3 h-3 text-emerald-600" />
-                    <span>Document Attached</span>
-                  </span>
-                )}
-              </div>
-
-              {/* Hidden File Input */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
-                onChange={onFileInputChange}
-                className="hidden"
-                id="leave-document-file-input"
-              />
-
-              {/* Drag and Drop Zone or Attached File Card */}
-              {!attachedDoc ? (
-                <div
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  onClick={() => fileInputRef.current?.click()}
-                  className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all ${
-                    isDraggingFile
-                      ? 'border-stone-800 bg-[#ede4d6]'
-                      : 'border-[#ded4c5] bg-white hover:bg-[#fcfaf7]'
-                  }`}
-                >
-                  <div className="max-w-md mx-auto space-y-2">
-                    <div className="w-10 h-10 rounded-full bg-[#ede4d6] text-stone-800 flex items-center justify-center mx-auto">
-                      <Paperclip className="w-5 h-5" />
-                    </div>
-                    <div className="text-xs text-stone-800 font-semibold">
-                      Drag and drop your file here, or{' '}
-                      <span className="text-stone-950 underline font-bold">browse from computer</span>
-                    </div>
-                    <p className="text-[11px] text-stone-500">
-                      Supports PDF, PNG, JPG, DOCX (Max 15MB)
-                    </p>
+              {/* RIGHT COLUMN: Document Attachment & Submission (5 cols) */}
+              <div className="lg:col-span-5 space-y-2.5 flex flex-col h-full justify-between">
+                {/* 4. ATTACH DOCUMENT */}
+                <div className="space-y-1.5 bg-white border border-[#ded4c5] p-3 rounded-xl shadow-2xs">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-stone-900 uppercase tracking-wide flex items-center gap-1">
+                      <Paperclip className="w-3 h-3 text-stone-700" />
+                      <span>4. Supporting Document</span>
+                    </label>
+                    {activeLeaveDef?.attachmentMandatory ? (
+                      <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.2 rounded">
+                        Required
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-stone-400">Optional</span>
+                    )}
                   </div>
-                </div>
-              ) : (
-                /* Attached Document Preview Card */
-                <div className="bg-white border border-[#ded4c5] rounded-xl p-3.5 flex items-center justify-between gap-3 shadow-xs">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-lg bg-stone-900 text-stone-50 flex items-center justify-center shrink-0">
-                      <FileText className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0 space-y-0.5">
-                      <div className="text-xs font-bold text-stone-900 truncate">
-                        {attachedDoc.name}
-                      </div>
-                      <div className="text-[11px] text-stone-500 font-mono flex items-center gap-2">
-                        <span>{formatFileSize(attachedDoc.size)}</span>
-                        <span>•</span>
-                        <span>{attachedDoc.type || 'Document'}</span>
+
+                  {/* Hidden File Input */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+                    onChange={onFileInputChange}
+                    className="hidden"
+                    id="leave-document-file-input"
+                  />
+
+                  {/* Compact Drag & Drop Zone or Attached Card */}
+                  {!attachedDoc ? (
+                    <div
+                      onDragOver={handleDragOver}
+                      onDragLeave={handleDragLeave}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`border border-dashed rounded-lg p-3 text-center cursor-pointer transition-all ${
+                        isDraggingFile
+                          ? 'border-stone-800 bg-[#ede4d6]'
+                          : 'border-[#ded4c5] bg-[#fcfaf7] hover:bg-[#ede4d6]'
+                      }`}
+                    >
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="w-7 h-7 rounded-full bg-white border border-[#ded4c5] text-stone-700 flex items-center justify-center shadow-2xs">
+                          <Paperclip className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="text-xs text-stone-800 font-semibold leading-tight">
+                          Drop file or <span className="text-stone-950 underline font-bold">browse</span>
+                        </div>
+                        <p className="text-[10px] text-stone-400">
+                          PDF, PNG, JPG, DOCX (Max 15MB)
+                        </p>
                       </div>
                     </div>
-                  </div>
+                  ) : (
+                    /* Attached Document Preview Card */
+                    <div className="bg-[#fcfaf7] border border-[#ded4c5] rounded-lg p-2 flex items-center justify-between gap-2 shadow-2xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-7 h-7 rounded-md bg-stone-900 text-stone-50 flex items-center justify-center shrink-0">
+                          <FileText className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-stone-900 truncate">
+                            {attachedDoc.name}
+                          </div>
+                          <div className="text-[10px] text-stone-500 font-mono">
+                            {formatFileSize(attachedDoc.size)}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAttachedDoc(null)}
+                        className="p-1 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                        title="Remove file"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
 
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  {/* Compact Sample Presets Bar */}
+                  <div className="flex items-center gap-1 text-[10px] text-stone-500 pt-0.5 overflow-x-auto scrollbar-none">
+                    <span className="shrink-0">Presets:</span>
                     <button
                       type="button"
-                      onClick={() => setAttachedDoc(null)}
-                      className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                      title="Remove attached document"
+                      onClick={() => attachPresetSample('medical')}
+                      className="bg-[#f8f5ef] hover:bg-[#ede4d6] border border-[#ded4c5] px-1.5 py-0.5 rounded text-[10px] text-stone-700 transition-colors cursor-pointer whitespace-nowrap"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      + Medical
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => attachPresetSample('travel')}
+                      className="bg-[#f8f5ef] hover:bg-[#ede4d6] border border-[#ded4c5] px-1.5 py-0.5 rounded text-[10px] text-stone-700 transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      + Travel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => attachPresetSample('event')}
+                      className="bg-[#f8f5ef] hover:bg-[#ede4d6] border border-[#ded4c5] px-1.5 py-0.5 rounded text-[10px] text-stone-700 transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      + Event
                     </button>
                   </div>
                 </div>
-              )}
 
-              {/* Quick Sample Presets Bar */}
-              <div className="flex flex-wrap items-center gap-1.5 text-xs text-stone-600 pt-0.5">
-                <span className="text-[11px] text-stone-400 font-medium">Quick sample attachments:</span>
-                <button
-                  type="button"
-                  onClick={() => attachPresetSample('medical')}
-                  className="bg-white hover:bg-[#ede4d6] border border-[#ded4c5] px-2 py-0.5 rounded text-[11px] text-stone-700 transition-colors cursor-pointer"
-                >
-                  + Medical Certificate.pdf
-                </button>
-                <button
-                  type="button"
-                  onClick={() => attachPresetSample('travel')}
-                  className="bg-white hover:bg-[#ede4d6] border border-[#ded4c5] px-2 py-0.5 rounded text-[11px] text-stone-700 transition-colors cursor-pointer"
-                >
-                  + Travel Itinerary.pdf
-                </button>
-                <button
-                  type="button"
-                  onClick={() => attachPresetSample('event')}
-                  className="bg-white hover:bg-[#ede4d6] border border-[#ded4c5] px-2 py-0.5 rounded text-[11px] text-stone-700 transition-colors cursor-pointer"
-                >
-                  + Event Invitation.pdf
-                </button>
-              </div>
-            </div>
+                {/* SUMMARY & SUBMISSION BLOCK */}
+                <div className="space-y-2 bg-white border border-[#ded4c5] p-3 rounded-xl shadow-2xs">
+                  {/* Summary row */}
+                  <div className="text-xs text-stone-700 space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-stone-500">Summary:</span>
+                      <strong className="text-stone-900 uppercase">
+                        {leaveType} • {calculateDays()} {calculateDays() === 1 ? 'Day' : 'Days'}
+                      </strong>
+                    </div>
+                    <div className="text-[11px] text-stone-500 flex items-center gap-1.5 bg-[#f8f5ef] p-1.5 rounded-lg border border-[#ded4c5]">
+                      <AlertCircle className="w-3.5 h-3.5 text-stone-600 shrink-0" />
+                      <span className="truncate">
+                        Approval:{' '}
+                        {activeLeaveDef?.approvalBy === 'both'
+                          ? 'Manager & HR'
+                          : activeLeaveDef?.approvalBy === 'hr_only'
+                          ? 'HR Department'
+                          : 'Reporting Manager'}
+                      </span>
+                    </div>
+                  </div>
 
-            {/* 4. ADD DESCRIPTION & HANDOVER DETAILS */}
-            <div className="space-y-3 pt-2 border-t border-[#ded4c5]">
-              <label htmlFor="leave-description-field" className="text-xs font-bold text-stone-900 uppercase tracking-wide flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <span>4. Description & Justification</span>
-                  <span className="text-rose-600 font-bold">*</span>
-                </span>
-                <span className="text-[11px] font-normal normal-case text-stone-400">
-                  {description.length} characters
-                </span>
-              </label>
-
-              <textarea
-                id="leave-description-field"
-                required
-                rows={3}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Explain the detailed purpose for your leave request, key deliverables handover status, and availability during this period..."
-                className="w-full bg-white border border-[#ded4c5] rounded-xl p-3 text-xs sm:text-sm text-stone-900 placeholder-stone-400 focus:border-stone-800 focus:outline-hidden"
-              />
-
-              {/* Emergency Contact */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <div className="space-y-1">
-                  <label htmlFor="leave-emergency-input" className="text-xs font-medium text-stone-700">
-                    Emergency Phone / Alternate Contact (Optional)
-                  </label>
-                  <input
-                    id="leave-emergency-input"
-                    type="text"
-                    value={emergencyContact}
-                    onChange={(e) => setEmergencyContact(e.target.value)}
-                    placeholder="+1 (415) 555-0199 (Family / Spouse / Delegate)"
-                    className="w-full bg-white border border-[#ded4c5] rounded-xl px-3 py-2 text-xs sm:text-sm text-stone-900 focus:border-stone-800 focus:outline-hidden"
-                  />
-                </div>
-
-                <div className="text-[11px] text-stone-500 bg-[#ede4d6] border border-[#ded4c5] p-2.5 rounded-xl flex items-center gap-2 mt-auto">
-                  <AlertCircle className="w-4 h-4 text-stone-600 shrink-0" />
-                  <span>
-                    Your reporting manager will receive this request along with attached documents for review and sign-off.
-                  </span>
+                  {/* Submit Button */}
+                  <button
+                    type="submit"
+                    className="w-full py-2.5 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-50 font-bold text-xs sm:text-sm shadow-xs flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.99]"
+                  >
+                    <Send className="w-4 h-4 text-amber-300" />
+                    <span>Submit Application</span>
+                  </button>
                 </div>
               </div>
-            </div>
-
-            {/* Submit Button */}
-            <div className="pt-3 border-t border-[#ded4c5] flex items-center justify-between">
-              <div className="text-xs text-stone-500">
-                <span>Selected: </span>
-                <strong className="text-stone-900 font-bold uppercase">{leaveType} Leave</strong>
-                <span> • {calculateDays()} Days</span>
-                {attachedDoc && <span> • 1 Attached Doc</span>}
-              </div>
-
-              <button
-                type="submit"
-                className="px-6 py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-50 font-semibold text-xs sm:text-sm shadow-xs flex items-center gap-2 cursor-pointer transition-colors"
-              >
-                <Send className="w-4 h-4" />
-                <span>Submit Leave Application</span>
-              </button>
             </div>
           </form>
         </div>
@@ -1155,7 +1118,7 @@ export const RequestsManager: React.FC = () => {
                                 <div className="text-[11px] mt-1 text-stone-600">
                                   {leave.managerApproval?.reviewedBy ? (
                                     <span>
-                                      By: <strong>{leave.managerApproval.reviewedBy}</strong> ({leave.managerApproval.reviewedAt?.split('T')[0]})
+                                      By: <strong>{leave.managerApproval.reviewedBy}</strong> {leave.managerApproval.reviewedAt ? `(${leave.managerApproval.reviewedAt.split('T')[0]})` : ''}
                                       {leave.managerApproval.comments && (
                                         <div className="italic text-stone-700 mt-0.5">
                                           &ldquo;{leave.managerApproval.comments}&rdquo;
@@ -1201,7 +1164,7 @@ export const RequestsManager: React.FC = () => {
                                 <div className="text-[11px] mt-1 text-stone-600">
                                   {leave.hrApproval?.reviewedBy ? (
                                     <span>
-                                      By: <strong>{leave.hrApproval.reviewedBy}</strong> ({leave.hrApproval.reviewedAt?.split('T')[0]})
+                                      By: <strong>{leave.hrApproval.reviewedBy}</strong> {leave.hrApproval.reviewedAt ? `(${leave.hrApproval.reviewedAt.split('T')[0]})` : ''}
                                       {leave.hrApproval.comments && (
                                         <div className="italic text-stone-700 mt-0.5">
                                           &ldquo;{leave.hrApproval.comments}&rdquo;
@@ -1651,8 +1614,8 @@ export const RequestsManager: React.FC = () => {
                               <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
                               <span>
                                 <strong>Manager Endorsed:</strong> Approved by{' '}
-                                <strong className="text-emerald-900">{req.managerApproval.reviewedBy}</strong> on{' '}
-                                {req.managerApproval.reviewedAt?.split('T')[0]}
+                                <strong className="text-emerald-900">{req.managerApproval.reviewedBy}</strong>
+                                {req.managerApproval.reviewedAt ? ` on ${req.managerApproval.reviewedAt.split('T')[0]}` : ''}
                                 {req.managerApproval.comments && ` — "${req.managerApproval.comments}"`}
                               </span>
                             </div>

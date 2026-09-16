@@ -1,5 +1,7 @@
 import React from 'react';
 import { useAttendance } from '../context/AttendanceContext';
+import { useLanguage } from '../context/LanguageContext';
+import { LanguageSwitcher } from './LanguageSwitcher';
 import { AuthorityLogo } from './AuthorityLogo';
 import {
   Clock,
@@ -12,9 +14,8 @@ import {
   UserCheck,
   Shield,
   LogOut,
-  Database,
-  RefreshCw,
   Bell,
+  Globe,
 } from 'lucide-react';
 
 export type NavigationTab =
@@ -41,13 +42,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const {
     currentEmployee,
+    employees,
+    setCurrentEmployeeId,
+    setIsAuthenticated,
     leaveRequests,
     permissionRequests,
     isCurrentHR,
     logout,
-    isDbConnected,
-    isDbSyncing,
   } = useAttendance();
+  const { t } = useLanguage();
 
   // If a non-HR/Admin user is on employees, definitions, or locations tab, safely redirect back to dashboard
   React.useEffect(() => {
@@ -66,20 +69,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
     icon: React.FC<{ className?: string }>;
     badge?: string;
   }[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-    { id: 'attendance', label: 'Attendance', icon: UserCheck },
-    { id: 'requests', label: 'Requests & Approvals', icon: Calendar },
+    { id: 'dashboard', label: t('nav.dashboard', 'Dashboard'), icon: LayoutDashboard },
+    { id: 'attendance', label: t('nav.attendance', 'Attendance Logs'), icon: UserCheck },
+    { id: 'requests', label: t('nav.requests', 'Leave & Requests'), icon: Calendar },
     ...(isCurrentHR
       ? [
           {
             id: 'employees' as NavigationTab,
-            label: 'Employees',
+            label: t('nav.employees', 'Employee Directory'),
             icon: Users,
             badge: 'HR',
           },
           {
             id: 'definitions' as NavigationTab,
-            label: 'Definitions',
+            label: t('nav.definitions', 'Settings & Definitions'),
             icon: SlidersHorizontal,
             badge: 'Admin/HR',
           },
@@ -109,32 +112,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
         } /* Desktop Navigation Bubble */
         md:relative md:top-0 md:left-0 md:h-full md:w-68 md:shrink-0 md:rounded-3xl md:bg-[#fcfaf7]/95 md:backdrop-blur-md md:border md:border-[#ded4c5] md:shadow-xl md:shadow-stone-900/5 overflow-hidden`}
       >
-        {/* Top Branding Header */}
-        <div className="p-4.5 pb-3.5 flex items-center justify-between border-b border-[#ece4d6]">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="p-1.5 rounded-2xl bg-white border border-[#ded4c5] shadow-xs shrink-0 flex items-center justify-center">
-              <AuthorityLogo size="sm" imgClassName="w-6.5 h-6.5 object-contain" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold text-sm tracking-tight text-stone-900 leading-none">
-                  SAATA
-                </span>
-              </div>
-              <span className="text-[10px] text-stone-500 block uppercase tracking-widest font-bold mt-0.5">
-                Admin Workspace
-              </span>
-            </div>
-          </div>
-
+        {/* Top Branding Header with Large Full-Width Logo */}
+        <div className="p-3.5 pb-3 border-b border-[#ece4d6] relative">
+          {/* Mobile Close Button */}
           <button
             type="button"
             id="close-sidebar-btn"
             onClick={() => setMobileOpen(false)}
-            className="md:hidden p-1.5 rounded-xl text-stone-500 hover:text-stone-800 hover:bg-[#ece4d6] cursor-pointer transition-colors"
+            className="md:hidden absolute top-5 right-5 z-20 p-1.5 rounded-xl bg-white/90 text-stone-600 hover:text-stone-900 hover:bg-white cursor-pointer transition-colors border border-[#ded4c5] shadow-xs"
+            title="Close navigation"
           >
             <X className="w-4 h-4" />
           </button>
+
+          {/* Full-width Logo Card */}
+          <div className="w-full bg-white border border-[#ded4c5] rounded-2xl p-3 shadow-2xs flex flex-col items-center justify-center space-y-2">
+            <div className="w-full flex items-center justify-center px-1 py-1">
+              <AuthorityLogo
+                size="full"
+                className="w-full"
+                imgClassName="w-full h-16 sm:h-20 object-contain drop-shadow-xs max-w-full"
+              />
+            </div>
+            <div className="w-full text-center border-t border-[#f0e8db] pt-1.5">
+              <span className="font-black text-xs sm:text-sm tracking-wide text-stone-900 block uppercase">
+                SAA TIME & ATTENDANCE
+              </span>
+              <span className="text-[9px] text-stone-500 font-bold block uppercase tracking-widest mt-0.5">
+                Management System
+              </span>
+            </div>
+          </div>
         </div>
 
         {/* Floating Navigation Menu Items */}
@@ -214,9 +222,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-1">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-xs font-bold text-stone-900 truncate">
-                      {currentEmployee.name}
-                    </span>
+                    <select
+                      value={currentEmployee.id}
+                      onChange={(e) => {
+                        setCurrentEmployeeId(e.target.value);
+                        setIsAuthenticated(true);
+                      }}
+                      className="text-xs font-extrabold text-stone-900 bg-transparent border-none outline-none cursor-pointer p-0 hover:text-amber-800 transition-colors max-w-[110px] truncate"
+                      title="Switch Active Account"
+                    >
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.id} className="bg-white text-stone-900 font-bold">
+                          {emp.name} ({emp.role === 'admin' ? 'HR Admin' : emp.role === 'hr' ? 'HR' : emp.role === 'manager' ? 'Manager' : 'Staff'})
+                        </option>
+                      ))}
+                    </select>
                     {isCurrentHR && (
                       <span className="text-[8px] font-extrabold uppercase bg-amber-100 text-amber-900 border border-amber-300 px-1 py-0.2 rounded-md shrink-0">
                         HR
@@ -258,8 +278,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
               </div>
             </div>
 
-            {/* Authenticated Account Details */}
+            {/* Language Switcher in Sidebar */}
             <div className="pt-2 border-t border-[#ece4d6] flex items-center justify-between text-[10.5px]">
+              <span className="text-stone-500 font-bold flex items-center gap-1">
+                <Globe className="w-3 h-3 text-emerald-600" />
+                <span>{t('header.language', 'Language')}</span>
+              </span>
+              <LanguageSwitcher variant="pill" />
+            </div>
+
+            {/* Authenticated Account Details */}
+            <div className="pt-1.5 flex items-center justify-between text-[10.5px]">
               <span className="text-stone-500 font-medium">Employee ID</span>
               <span className="font-mono font-bold text-stone-800 bg-stone-100 px-1.5 py-0.5 rounded border border-stone-200">
                 {currentEmployee.employeeCode}
@@ -296,33 +325,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 className="w-full py-2 px-3 bg-stone-100 hover:bg-rose-50 border border-stone-200 hover:border-rose-200 text-stone-700 hover:text-rose-700 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-colors active:scale-98"
               >
                 <LogOut className="w-3.5 h-3.5" />
-                <span>Log Out</span>
+                <span>{t('header.logout', 'Log Out')}</span>
               </button>
-            </div>
-
-            {/* Live Firestore DB Sync Indicator */}
-            <div className="pt-1.5 border-t border-[#ece4d6] flex items-center justify-between text-[9px]">
-              <div className="flex items-center gap-1 text-stone-500 font-semibold">
-                <Database className="w-2.5 h-2.5 text-emerald-600" />
-                <span>Cloud Firestore</span>
-              </div>
-              <div>
-                {isDbSyncing ? (
-                  <span className="flex items-center gap-1 text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                    <RefreshCw className="w-2 h-2 animate-spin" />
-                    <span>Syncing</span>
-                  </span>
-                ) : isDbConnected ? (
-                  <span className="flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span>Live Connected</span>
-                  </span>
-                ) : (
-                  <span className="text-stone-500 font-bold bg-stone-100 px-1.5 py-0.5 rounded">
-                    Local Cache
-                  </span>
-                )}
-              </div>
             </div>
           </div>
         </div>

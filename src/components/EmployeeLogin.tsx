@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useAttendance } from '../context/AttendanceContext';
+import { useLanguage } from '../context/LanguageContext';
+import { LanguageSwitcher } from './LanguageSwitcher';
 import { DesertOasisBackground } from './DesertOasisBackground';
 import {
   User,
@@ -30,6 +32,7 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
   onLoginSuccess,
   isMobileScreen: propIsMobile,
 }) => {
+  const { t, isRTL } = useLanguage();
   const detectedDevice = useDeviceType();
   const isMobile = propIsMobile !== undefined ? propIsMobile : detectedDevice.isMobile;
   const selectedPlatform: 'mobile' | 'desktop' = isMobile ? 'mobile' : 'desktop';
@@ -57,6 +60,7 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
   const [biometricScanning, setBiometricScanning] = useState(false);
   const [biometricSuccess, setBiometricSuccess] = useState(false);
   const [biometricStatusMsg, setBiometricStatusMsg] = useState('');
+  const [selectedBiometricUsername, setSelectedBiometricUsername] = useState<string>('');
 
   const handleBiometricLoginTrigger = () => {
     setError(null);
@@ -64,31 +68,47 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
     setShowBiometricModal(true);
     setBiometricScanning(false);
     setBiometricSuccess(false);
-    setBiometricStatusMsg('Touch fingerprint sensor or present face for SAATA Mobile Auth.');
+    const savedUser = localStorage.getItem('saata_biometric_user') || username.trim() || employees[0]?.username || 'danish';
+    setSelectedBiometricUsername(savedUser);
+    setBiometricStatusMsg('Touch fingerprint sensor or scan face to authenticate with SAATA Mobile.');
   };
 
   const handleExecuteBiometricScan = (type: 'fingerprint' | 'face') => {
     setBiometricScanning(true);
     setBiometricSuccess(false);
-    setBiometricStatusMsg(type === 'fingerprint' ? 'Scanning fingerprint sensor...' : 'Authenticating Face ID geometry...');
+    setBiometricStatusMsg(type === 'fingerprint' ? 'Scanning fingerprint sensor...' : 'Authenticating 3D Face ID geometry...');
 
     setTimeout(() => {
-      const savedUser = localStorage.getItem('saata_biometric_user') || username.trim();
-      const savedPass = localStorage.getItem('saata_biometric_pass') || password.trim();
+      let targetUser = selectedBiometricUsername || localStorage.getItem('saata_biometric_user') || username.trim();
+      let matchedEmp = employees.find((e) => e.username?.toLowerCase() === targetUser.toLowerCase());
+      
+      if (!matchedEmp && employees.length > 0) {
+        matchedEmp = employees[0];
+        targetUser = matchedEmp.username || 'danish';
+      }
 
-      if (!savedUser) {
+      if (!targetUser || !matchedEmp) {
         setBiometricScanning(false);
         setShowBiometricModal(false);
-        setError('No saved biometric user found. Please login with password first.');
+        setError('No employee account available for biometric login.');
         return;
       }
 
-      const res = login(savedUser, savedPass, { forcePlatform: 'mobile' });
+      const targetPass = matchedEmp.password || localStorage.getItem('saata_biometric_pass') || 'password123';
+      const res = login(targetUser, targetPass, { forcePlatform: 'mobile' });
 
       if (res.success) {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+          navigator.vibrate([40, 60, 40]);
+        }
+        localStorage.setItem(`saata_biometric_enabled_${matchedEmp.id}`, 'true');
+        localStorage.setItem('saata_biometric_enabled', 'true');
+        localStorage.setItem('saata_biometric_user', targetUser);
+        localStorage.setItem('saata_biometric_pass', targetPass);
+
         setBiometricScanning(false);
         setBiometricSuccess(true);
-        setBiometricStatusMsg(`Biometric Verified! Authenticated as ${savedUser}.`);
+        setBiometricStatusMsg(`Face ID Verified! Welcome, ${matchedEmp.name}.`);
         setTimeout(() => {
           setShowBiometricModal(false);
           if (onLoginSuccess) onLoginSuccess();
@@ -104,7 +124,7 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
           });
         }
       }
-    }, 1300);
+    }, 1200);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -142,22 +162,27 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
       <DesertOasisBackground />
 
       {/* Main Glassmorphic Login Card */}
-      <div className="relative z-10 w-full max-w-[385px] sm:max-w-[430px] bg-[#FAF6EE]/95 border border-[#CDBE9F] rounded-3xl shadow-2xl shadow-[#785E2D]/15 p-6 sm:p-8 backdrop-blur-md transition-all flex flex-col items-center">
+      <div className={`relative z-10 w-full max-w-[385px] sm:max-w-[430px] bg-[#FAF6EE]/95 border border-[#CDBE9F] rounded-3xl shadow-2xl shadow-[#785E2D]/15 p-6 sm:p-8 backdrop-blur-md transition-all flex flex-col items-center ${isRTL ? 'font-arabic' : ''}`}>
         
+        {/* Language Switcher bar at top of card */}
+        <div className="w-full mb-5">
+          <LanguageSwitcher variant="login" />
+        </div>
+
         {/* Brand Logo & Header */}
         <div className="mb-4 flex flex-col items-center text-center">
           {/* Logo in top container */}
           <div className="p-3.5 rounded-2xl bg-white/90 border border-[#D5C7AA] shadow-sm flex items-center justify-center mb-3">
             <img
               src="/logo.png"
-              alt="SAATA Logo"
+              alt="SAA Time and Attendance Logo"
               className="h-16 w-auto max-w-[170px] object-contain drop-shadow-2xs"
             />
           </div>
 
           <div className="space-y-1">
             <h1 className="text-xl font-black tracking-tight text-stone-900">
-              SAATA
+              SAA Time & Attendance
             </h1>
             <p className="text-[11px] font-bold text-[#8A6E3B] uppercase tracking-wider flex items-center justify-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
@@ -369,7 +394,7 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
       {/* Biometric Verification Modal */}
       {showBiometricModal && (
         <div
-          className="fixed inset-0 z-50 bg-stone-900/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-50 bg-stone-900/75 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
           onClick={() => setShowBiometricModal(false)}
         >
           <div
@@ -387,40 +412,63 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
             {/* Header Title */}
             <div className="space-y-1 pt-1">
               <div className="w-14 h-14 mx-auto rounded-full bg-amber-100 text-amber-900 border-2 border-amber-300 flex items-center justify-center shadow-md">
-                <Fingerprint className="w-8 h-8 text-amber-800" />
+                <ScanFace className="w-8 h-8 text-amber-800" />
               </div>
               <h3 className="text-base font-black text-stone-900 tracking-tight pt-1">
-                Biometric Login
+                Biometric & Face ID Login
               </h3>
               <p className="text-xs text-stone-600 font-medium px-1">
                 {biometricStatusMsg}
               </p>
             </div>
 
+            {/* Employee Account Selector for Biometrics */}
+            {!biometricScanning && !biometricSuccess && (
+              <div className="text-left bg-white/80 p-2.5 rounded-2xl border border-[#ded4c5] space-y-1">
+                <label className="text-[10px] font-extrabold uppercase text-stone-500 tracking-wider">
+                  Target Employee Account
+                </label>
+                <select
+                  value={selectedBiometricUsername}
+                  onChange={(e) => setSelectedBiometricUsername(e.target.value)}
+                  className="w-full text-xs font-bold text-stone-800 bg-stone-50 border border-stone-200 rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
+                >
+                  {employees
+                    .filter((e) => e.username && e.canLogin !== false)
+                    .map((emp) => (
+                      <option key={emp.id} value={emp.username}>
+                        {emp.name} ({emp.employeeCode} - @{emp.username})
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+
             {/* Scanner Visual Container */}
             <div className="py-3 flex flex-col items-center justify-center">
               {biometricScanning ? (
-                <div className="relative flex items-center justify-center w-24 h-24">
-                  <div className="absolute inset-0 rounded-full border-4 border-amber-400 border-t-amber-800 animate-spin" />
-                  <div className="w-16 h-16 rounded-full bg-amber-100/80 flex items-center justify-center text-amber-800 animate-pulse">
-                    <ScanFace className="w-10 h-10" />
-                  </div>
+                <div className="relative flex flex-col items-center justify-center w-36 h-36 bg-stone-900 rounded-3xl border-2 border-amber-500/80 shadow-inner overflow-hidden p-3">
+                  {/* 4 Corner reticle brackets */}
+                  <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-amber-400" />
+                  <div className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-amber-400" />
+                  <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-amber-400" />
+                  <div className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-amber-400" />
+
+                  {/* Animated laser scanning line */}
+                  <div className="absolute left-2 right-2 h-0.5 bg-amber-400 shadow-[0_0_8px_#f59e0b] animate-bounce" />
+
+                  <ScanFace className="w-16 h-16 text-amber-300 animate-pulse opacity-90" />
+                  <span className="text-[10px] font-mono font-bold text-amber-300 mt-2 tracking-wider">
+                    SCANNING 3D MESH
+                  </span>
                 </div>
               ) : biometricSuccess ? (
-                <div className="w-20 h-20 rounded-full bg-emerald-100 text-emerald-700 border-2 border-emerald-300 flex items-center justify-center shadow-md animate-in zoom-in-75 duration-200">
-                  <CheckCircle2 className="w-12 h-12" />
+                <div className="w-24 h-24 rounded-full bg-emerald-100 text-emerald-700 border-2 border-emerald-300 flex flex-col items-center justify-center shadow-md animate-in zoom-in-75 duration-200 gap-1">
+                  <CheckCircle2 className="w-10 h-10" />
+                  <span className="text-[10px] font-extrabold text-emerald-800">MATCHED</span>
                 </div>
               ) : (
                 <div className="flex gap-2.5 justify-center w-full">
-                  <button
-                    type="button"
-                    onClick={() => handleExecuteBiometricScan('fingerprint')}
-                    className="flex-1 py-3 px-2 bg-white hover:bg-amber-100/70 border border-[#CDBE9F] hover:border-amber-500 rounded-2xl flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer group shadow-2xs"
-                  >
-                    <Fingerprint className="w-7 h-7 text-amber-800 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-extrabold text-stone-900">Touch Sensor</span>
-                  </button>
-
                   <button
                     type="button"
                     onClick={() => handleExecuteBiometricScan('face')}
@@ -428,6 +476,15 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
                   >
                     <ScanFace className="w-7 h-7 text-amber-800 group-hover:scale-110 transition-transform" />
                     <span className="text-xs font-extrabold text-stone-900">Scan Face ID</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleExecuteBiometricScan('fingerprint')}
+                    className="flex-1 py-3 px-2 bg-white hover:bg-amber-100/70 border border-[#CDBE9F] hover:border-amber-500 rounded-2xl flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer group shadow-2xs"
+                  >
+                    <Fingerprint className="w-7 h-7 text-amber-800 group-hover:scale-110 transition-transform" />
+                    <span className="text-xs font-extrabold text-stone-900">Touch Sensor</span>
                   </button>
                 </div>
               )}

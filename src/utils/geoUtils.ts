@@ -29,11 +29,12 @@ export function calculateDistanceMeters(
  * Evaluates whether user's current GPS position is inside any of their authorized office geofences.
  */
 export function checkGeofenceStatus(
-  coords: GeoCoordinates,
-  allLocations: OfficeLocation[],
-  allowedLocationIds: string[]
+  coords?: Partial<GeoCoordinates> | null,
+  allLocations?: OfficeLocation[] | null,
+  allowedLocationIds?: string[] | null
 ): GeofenceCheckResult {
-  if (!allLocations || allLocations.length === 0) {
+  const safeLocations = Array.isArray(allLocations) ? allLocations : [];
+  if (safeLocations.length === 0) {
     return {
       isInAllowedGeofence: false,
       distanceToNearestMeters: 0,
@@ -42,26 +43,30 @@ export function checkGeofenceStatus(
     };
   }
 
+  const safeLat = typeof coords?.latitude === 'number' && !isNaN(coords.latitude) ? coords.latitude : safeLocations[0].latitude;
+  const safeLng = typeof coords?.longitude === 'number' && !isNaN(coords.longitude) ? coords.longitude : safeLocations[0].longitude;
+  const safeAccuracy = typeof coords?.accuracy === 'number' && !isNaN(coords.accuracy) ? coords.accuracy : 10;
+
+  const safeAllowedIds = Array.isArray(allowedLocationIds) ? allowedLocationIds : [];
   const isGlobalAllowed =
-    !allowedLocationIds ||
-    allowedLocationIds.length === 0 ||
-    allowedLocationIds.includes('*') ||
-    allowedLocationIds.includes('all');
+    safeAllowedIds.length === 0 ||
+    safeAllowedIds.includes('*') ||
+    safeAllowedIds.includes('all');
 
   // Calculate distance to all locations with GPS accuracy tolerance buffer
-  const accuracyBuffer = Math.min(35, Math.max(5, (coords.accuracy || 10) * 0.4));
+  const accuracyBuffer = Math.min(35, Math.max(5, safeAccuracy * 0.4));
 
-  const locationsWithDist = allLocations.map((loc) => {
+  const locationsWithDist = safeLocations.map((loc) => {
     const dist = calculateDistanceMeters(
-      coords.latitude,
-      coords.longitude,
+      safeLat,
+      safeLng,
       loc.latitude,
       loc.longitude
     );
     // Inside if distance is within the location radius plus device GPS accuracy margin
     const effectiveRadius = loc.radiusMeters + accuracyBuffer;
     const isInsideRadius = dist <= effectiveRadius;
-    const isAllowedForEmployee = isGlobalAllowed || allowedLocationIds.includes(loc.id);
+    const isAllowedForEmployee = isGlobalAllowed || safeAllowedIds.includes(loc.id);
 
     return {
       location: loc,

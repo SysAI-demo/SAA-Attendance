@@ -875,9 +875,9 @@ export const DefineWorkSchedule: React.FC = () => {
                     onChange={(e) => setSelectedDept(e.target.value)}
                     className="w-full bg-[#f8f5ef] border border-[#ded4c5] rounded-xl px-3 py-2 text-xs font-semibold text-stone-900 focus:outline-hidden focus:border-stone-800 cursor-pointer"
                   >
-                    {Array.from(new Set(employees.map((e) => e.department))).map((dept) => (
+                    {Array.from(new Set((employees || []).map((e) => e.department))).map((dept) => (
                       <option key={dept} value={dept}>
-                        {dept} ({employees.filter((e) => e.department === dept).length} employees)
+                        {dept} ({(employees || []).filter((e) => e.department === dept).length} employees)
                       </option>
                     ))}
                   </select>
@@ -896,7 +896,7 @@ export const DefineWorkSchedule: React.FC = () => {
                     </span>
                   </label>
                   <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                    {employees.map((emp) => {
+                    {(employees || []).map((emp) => {
                       const isSelected = selectedEmpIdsForShift.includes(emp.id);
                       const currentShift = workSchedule.shifts.find((s) => s.id === emp.shiftTimingId);
                       return (
@@ -960,9 +960,9 @@ export const DefineWorkSchedule: React.FC = () => {
                 onClick={() => {
                   let targetIds: string[] = [];
                   if (assignScope === 'all') {
-                    targetIds = employees.map((e) => e.id);
+                    targetIds = (employees || []).map((e) => e.id);
                   } else if (assignScope === 'department') {
-                    targetIds = employees.filter((e) => e.department === selectedDept).map((e) => e.id);
+                    targetIds = (employees || []).filter((e) => e.department === selectedDept).map((e) => e.id);
                   } else {
                     targetIds = selectedEmpIdsForShift;
                   }

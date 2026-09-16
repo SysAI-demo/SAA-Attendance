@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAttendance } from '../context/AttendanceContext';
+import { useLanguage } from '../context/LanguageContext';
 import {
   SlidersHorizontal,
   Calendar,
@@ -35,6 +36,7 @@ interface DefinitionsViewProps {
 }
 
 export const DefinitionsView: React.FC<DefinitionsViewProps> = ({ initialTab }) => {
+  const { t, isRTL } = useLanguage();
   const {
     isCurrentHR,
     currentEmployee,
@@ -85,49 +87,49 @@ export const DefinitionsView: React.FC<DefinitionsViewProps> = ({ initialTab }) 
   }[] = [
     {
       id: 'leaves',
-      label: 'Define Leaves',
+      label: t('def.leaves', 'Define Leaves'),
       description: 'Leave categories, quotas, carry forwards & encashment',
       icon: Calendar,
       count: `${(leaveDefinitions || []).filter((l) => l?.isActive).length} Types`,
     },
     {
       id: 'permissions',
-      label: 'Define Permissions',
+      label: t('def.permissions', 'Define Permissions'),
       description: 'Gate passes, duty slips & short duration limits',
       icon: Clock,
       count: `${(permissionDefinitions || []).filter((p) => p?.isActive).length} Policies`,
     },
     {
       id: 'geofences',
-      label: 'Office Geofences',
+      label: t('def.geofences', 'Office Geofences'),
       description: 'Physical branches, GPS coordinates & boundary radius',
       icon: Building2,
       count: `${(officeLocations || []).length} Geofences`,
     },
     {
       id: 'grades',
-      label: 'Define Grades',
+      label: t('def.grades', 'Define Grades'),
       description: 'Job grade codes, grade titles & active status',
       icon: Award,
       count: `${(gradeDefinitions || []).length} Grades`,
     },
     {
       id: 'ta_policies',
-      label: 'Define TA Policies',
+      label: t('def.ta_policies', 'Define TA Policies'),
       description: 'Grace periods, late rules & travel allowances',
       icon: Sliders,
       count: 'Active',
     },
     {
       id: 'holidays',
-      label: 'Define Holidays',
+      label: t('def.holidays', 'Define Holidays'),
       description: 'Annual calendar, public & optional holidays',
       icon: CalendarDays,
       count: `${(holidayDefinitions || []).length} Holidays`,
     },
     {
       id: 'work_schedule',
-      label: 'Define Work Schedule',
+      label: t('def.shifts', 'Define Work Schedule'),
       description: 'Operating days, Saturday policy & shifts',
       icon: CalendarClock,
       count: `${(workSchedule?.shifts || []).length} Shifts`,
@@ -137,20 +139,18 @@ export const DefinitionsView: React.FC<DefinitionsViewProps> = ({ initialTab }) 
   return (
     <div id="definitions-view" className="max-w-7xl mx-auto space-y-6 pb-16">
       {/* Header Banner */}
-      <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-3xl p-5 sm:p-6 shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-stone-900 flex items-center justify-center text-stone-100 shadow-xs shrink-0">
-            <SlidersHorizontal className="w-6 h-6" />
-          </div>
-          <div>
+      <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-xl px-3.5 py-2 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <SlidersHorizontal className="w-4 h-4 text-stone-800 shrink-0" />
+          <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl sm:text-2xl font-bold text-stone-900">System Definitions</h1>
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-stone-900 text-stone-100 px-2 py-0.5 rounded-md flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3 text-amber-400" />
-                <span>HR & Super Admin Only</span>
+              <h1 className="text-sm font-bold text-stone-900 leading-tight">System Definitions</h1>
+              <span className="text-[9px] font-bold uppercase tracking-wider bg-stone-900 text-stone-100 px-1.5 py-0.5 rounded flex items-center gap-1 shadow-2xs shrink-0">
+                <ShieldCheck className="w-2.5 h-2.5 text-amber-400" />
+                <span>HR & Super Admin</span>
               </span>
             </div>
-            <p className="text-xs sm:text-sm text-stone-600 mt-0.5">
+            <p className="text-[11px] text-stone-600 truncate mt-0.5">
               Master organizational configuration for leaves, permissions, office geofences, job grades, attendance tolerances, holidays, and shifts.
             </p>
           </div>
@@ -159,9 +159,9 @@ export const DefinitionsView: React.FC<DefinitionsViewProps> = ({ initialTab }) 
         <button
           type="button"
           onClick={() => setShowResetAllModal(true)}
-          className="text-xs bg-white hover:bg-[#ede4d6] border border-[#ded4c5] text-stone-700 px-3 py-2 rounded-xl font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+          className="text-[11px] bg-white hover:bg-[#ede4d6] border border-[#ded4c5] text-stone-700 px-2.5 py-1 rounded-lg font-semibold flex items-center gap-1 transition-colors cursor-pointer shrink-0 self-start sm:self-auto shadow-2xs"
         >
-          <RotateCcw className="w-3.5 h-3.5 text-stone-500" />
+          <RotateCcw className="w-3 h-3 text-stone-500" />
           <span>Reset All Master Data</span>
         </button>
       </div>

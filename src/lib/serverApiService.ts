@@ -54,13 +54,29 @@ class ServerApiService {
     };
   }
 
+  private async safeFetch(url: string, init?: RequestInit, retries: number = 1): Promise<Response | null> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const res = await fetch(url, init);
+        return res;
+      } catch (err) {
+        if (attempt === retries) {
+          console.warn(`[ServerAPI] Network request to ${url} temporarily unavailable:`, (err as any)?.message || err);
+          return null;
+        }
+        await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+      }
+    }
+    return null;
+  }
+
   // ==============================================================
   // 1. FULL SYNC & REAL-TIME SSE (200 CONCURRENT USERS)
   // ==============================================================
   public async fetchFullSync(): Promise<FullServerSyncData | null> {
     try {
-      const res = await fetch('/api/sync', { headers: this.getHeaders() });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const res = await this.safeFetch('/api/sync', { headers: this.getHeaders() }, 2);
+      if (!res || !res.ok) throw new Error(`HTTP ${res?.status || 'Network Error'}`);
       const json = await res.json();
       return json.data;
     } catch (err) {
@@ -133,26 +149,27 @@ class ServerApiService {
   // ==============================================================
   public async saveEmployee(employee: Employee): Promise<Employee | null> {
     try {
-      const res = await fetch('/api/employees', {
+      const res = await this.safeFetch('/api/employees', {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(employee),
       });
+      if (!res) return employee;
       const data = await res.json();
       return data.employee || employee;
     } catch (err) {
-      console.error('[ServerAPI] saveEmployee error:', err);
+      console.warn('[ServerAPI] saveEmployee fallback:', err);
       return employee;
     }
   }
 
   public async deleteEmployee(id: string): Promise<boolean> {
     try {
-      const res = await fetch(`/api/employees/${id}`, {
+      const res = await this.safeFetch(`/api/employees/${id}`, {
         method: 'DELETE',
         headers: this.getHeaders(),
       });
-      return res.ok;
+      return res ? res.ok : false;
     } catch {
       return false;
     }
@@ -163,28 +180,29 @@ class ServerApiService {
   // ==============================================================
   public async recordMobileSession(employeeId: string, session: ActiveMobileSession): Promise<Employee | null> {
     try {
-      const res = await fetch('/api/auth/mobile-session', {
+      const res = await this.safeFetch('/api/auth/mobile-session', {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify({ employeeId, session }),
       });
+      if (!res) return null;
       const data = await res.json();
       return data.employee || null;
     } catch (err) {
-      console.error('[ServerAPI] recordMobileSession error:', err);
+      console.warn('[ServerAPI] recordMobileSession fallback:', err);
       return null;
     }
   }
 
   public async clearMobileSession(employeeId: string): Promise<void> {
     try {
-      await fetch('/api/auth/mobile-session/logout', {
+      await this.safeFetch('/api/auth/mobile-session/logout', {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify({ employeeId }),
       });
     } catch (err) {
-      console.error('[ServerAPI] clearMobileSession error:', err);
+      console.warn('[ServerAPI] clearMobileSession fallback:', err);
     }
   }
 
@@ -193,26 +211,27 @@ class ServerApiService {
   // ==============================================================
   public async saveLocation(location: OfficeLocation): Promise<OfficeLocation | null> {
     try {
-      const res = await fetch('/api/locations', {
+      const res = await this.safeFetch('/api/locations', {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(location),
       });
+      if (!res) return location;
       const data = await res.json();
       return data.location || location;
     } catch (err) {
-      console.error('[ServerAPI] saveLocation error:', err);
+      console.warn('[ServerAPI] saveLocation fallback:', err);
       return location;
     }
   }
 
   public async deleteLocation(id: string): Promise<boolean> {
     try {
-      const res = await fetch(`/api/locations/${id}`, {
+      const res = await this.safeFetch(`/api/locations/${id}`, {
         method: 'DELETE',
         headers: this.getHeaders(),
       });
-      return res.ok;
+      return res ? res.ok : false;
     } catch {
       return false;
     }
@@ -223,25 +242,25 @@ class ServerApiService {
   // ==============================================================
   public async saveLeave(leave: LeaveRequest): Promise<void> {
     try {
-      await fetch('/api/leaves', {
+      await this.safeFetch('/api/leaves', {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(leave),
       });
     } catch (err) {
-      console.error('[ServerAPI] saveLeave error:', err);
+      console.warn('[ServerAPI] saveLeave fallback:', err);
     }
   }
 
   public async savePermission(perm: PermissionRequest): Promise<void> {
     try {
-      await fetch('/api/permissions', {
+      await this.safeFetch('/api/permissions', {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(perm),
       });
     } catch (err) {
-      console.error('[ServerAPI] savePermission error:', err);
+      console.warn('[ServerAPI] savePermission fallback:', err);
     }
   }
 
@@ -253,12 +272,12 @@ class ServerApiService {
     approvedBy?: string
   ): Promise<boolean> {
     try {
-      const res = await fetch(`/api/requests/${type}/${id}/action`, {
+      const res = await this.safeFetch(`/api/requests/${type}/${id}/action`, {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify({ action, comments, approvedBy }),
       });
-      return res.ok;
+      return res ? res.ok : false;
     } catch {
       return false;
     }
@@ -266,13 +285,13 @@ class ServerApiService {
 
   public async saveAttendanceRecord(record: AttendanceRecord): Promise<void> {
     try {
-      await fetch('/api/attendance', {
+      await this.safeFetch('/api/attendance', {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(record),
       });
     } catch (err) {
-      console.error('[ServerAPI] saveAttendanceRecord error:', err);
+      console.warn('[ServerAPI] saveAttendanceRecord fallback:', err);
     }
   }
 
@@ -286,25 +305,25 @@ class ServerApiService {
 
   public async saveNotification(notification: AppNotification): Promise<void> {
     try {
-      await fetch('/api/notifications', {
+      await this.safeFetch('/api/notifications', {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(notification),
       });
     } catch (err) {
-      console.error('[ServerAPI] saveNotification error:', err);
+      console.warn('[ServerAPI] saveNotification fallback:', err);
     }
   }
 
   public async batchMarkNotificationsRead(ids: string[]): Promise<void> {
     try {
-      await fetch('/api/notifications/batch-read', {
+      await this.safeFetch('/api/notifications/batch-read', {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify({ ids }),
       });
     } catch (err) {
-      console.error('[ServerAPI] batchMarkNotificationsRead error:', err);
+      console.warn('[ServerAPI] batchMarkNotificationsRead fallback:', err);
     }
   }
 
@@ -341,24 +360,24 @@ class ServerApiService {
   // ==============================================================
   public async updateDefinition(section: string, payload: any): Promise<void> {
     try {
-      await fetch(`/api/definitions/${section}`, {
+      await this.safeFetch(`/api/definitions/${section}`, {
         method: 'PUT',
         headers: this.getHeaders(),
         body: JSON.stringify(payload),
       });
     } catch (err) {
-      console.error(`[ServerAPI] updateDefinition ${section} error:`, err);
+      console.warn(`[ServerAPI] updateDefinition ${section} fallback:`, err);
     }
   }
 
   public async resetAllDefinitions(): Promise<void> {
     try {
-      await fetch('/api/definitions/reset-all', {
+      await this.safeFetch('/api/definitions/reset-all', {
         method: 'POST',
         headers: this.getHeaders(),
       });
     } catch (err) {
-      console.error('[ServerAPI] resetAllDefinitions error:', err);
+      console.warn('[ServerAPI] resetAllDefinitions fallback:', err);
     }
   }
 
@@ -367,24 +386,24 @@ class ServerApiService {
   // ==============================================================
   public async logActivity(log: UserActivityLog): Promise<void> {
     try {
-      await fetch('/api/activity-logs', {
+      await this.safeFetch('/api/activity-logs', {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(log),
       });
     } catch (err) {
-      console.error('[ServerAPI] logActivity error:', err);
+      console.warn('[ServerAPI] logActivity fallback:', err);
     }
   }
 
   public async markNotificationRead(id: string): Promise<void> {
     try {
-      await fetch(`/api/notifications/${id}/read`, {
+      await this.safeFetch(`/api/notifications/${id}/read`, {
         method: 'PUT',
         headers: this.getHeaders(),
       });
     } catch (err) {
-      console.error('[ServerAPI] markNotificationRead error:', err);
+      console.warn('[ServerAPI] markNotificationRead fallback:', err);
     }
   }
 

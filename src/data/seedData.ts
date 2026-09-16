@@ -63,15 +63,17 @@ export const INITIAL_EMPLOYEES: Employee[] = [
   {
     id: 'emp_01',
     name: 'Danish Khan',
+    nameAr: 'دانش خان',
     email: 'danish@company.com',
     username: 'danish',
     password: 'password123',
     isActive: true,
     avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     employeeCode: 'EMP-1001',
-    role: 'employee',
-    department: 'Engineering',
-    designation: 'Senior Full Stack Engineer',
+    role: 'hr',
+    department: 'Human Resources',
+    designation: 'HR Specialist',
+    designationAr: 'أخصائي الموارد البشرية',
     gradeId: 'gr_e2',
     phone: '+1 (415) 555-0192',
     joinedDate: '2022-03-15',
@@ -88,6 +90,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
   {
     id: 'emp_02',
     name: 'Sarah Mitchell (Manager)',
+    nameAr: 'سارة ميتشيل',
     email: 'sarah.m@company.com',
     username: 'sarah',
     password: 'password123',
@@ -97,6 +100,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     role: 'manager',
     department: 'Engineering & Product',
     designation: 'Engineering Director & Approver',
+    designationAr: 'مديرة الهندسة والمنتج',
     gradeId: 'gr_m1',
     phone: '+1 (415) 555-0144',
     joinedDate: '2020-01-10',
@@ -137,6 +141,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
   {
     id: 'emp_04',
     name: 'Priya Sharma',
+    nameAr: 'بريا شارما',
     email: 'priya.s@company.com',
     username: 'priya',
     password: 'password123',
@@ -146,6 +151,7 @@ export const INITIAL_EMPLOYEES: Employee[] = [
     role: 'hr',
     department: 'Human Resources',
     designation: 'People & Culture Lead',
+    designationAr: 'مسؤولة الموارد البشرية',
     gradeId: 'gr_m1',
     phone: '+1 (415) 555-0123',
     joinedDate: '2021-11-01',
@@ -520,7 +526,7 @@ function generatePast30DaysAttendance(): AttendanceRecord[] {
 
   // Define realistic shift profiles for employees
   const employeeShiftConfigs = [
-    { empId: 'emp_01', name: 'Danish Khan', code: 'EMP-1001', dept: 'Engineering', locId: 'loc_hq', locName: 'Silicon Oasis Headquarters', baseIn: '08:52', baseOut: '17:35', baseHours: 8.7 },
+    { empId: 'emp_01', name: 'Danish Khan', code: 'EMP-1001', dept: 'Human Resources', locId: 'loc_hq', locName: 'Silicon Oasis Headquarters', baseIn: '08:52', baseOut: '17:35', baseHours: 8.7 },
     { empId: 'emp_02', name: 'Sarah Mitchell (Manager)', code: 'MGR-2001', dept: 'Engineering & Product', locId: 'loc_hq', locName: 'Silicon Oasis Headquarters', baseIn: '08:35', baseOut: '17:40', baseHours: 9.1 },
     { empId: 'emp_03', name: 'Marcus Vance', code: 'EMP-1045', dept: 'Product Design', locId: 'loc_downtown', locName: 'Downtown Innovation Center', baseIn: '09:05', baseOut: '17:20', baseHours: 8.2 },
     { empId: 'emp_04', name: 'Priya Sharma', code: 'EMP-1089', dept: 'Human Resources', locId: 'loc_hq', locName: 'Silicon Oasis Headquarters', baseIn: '08:48', baseOut: '17:15', baseHours: 8.4 },
@@ -1130,6 +1136,7 @@ export const INITIAL_ACTIVITY_LOGS: UserActivityLog[] = [
 export const DEFAULT_HR_ADMIN_USER: Employee = {
   id: 'emp_admin_danish',
   name: 'Danish Khan',
+  nameAr: 'دانش خان',
   email: 'Danish199506@gmail.com',
   username: 'admin',
   password: 'password123',
@@ -1140,6 +1147,7 @@ export const DEFAULT_HR_ADMIN_USER: Employee = {
   role: 'admin',
   department: 'Human Resources',
   designation: 'HR Director & System Admin',
+  designationAr: 'مدير الموارد البشرية ومدير النظام',
   gradeId: 'gr_m1',
   phone: '+966 50 123 4567',
   joinedDate: '2024-01-01',

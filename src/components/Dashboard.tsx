@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAttendance } from '../context/AttendanceContext';
+import { useLanguage } from '../context/LanguageContext';
 import {
   Clock,
   CheckCircle2,
@@ -21,7 +22,9 @@ import {
   Mail,
   Phone,
   Building2,
+  ShieldAlert,
 } from 'lucide-react';
+import { ViolationsCard } from './ViolationsCard';
 
 interface DashboardProps {
   onNavigateToMobile?: () => void;
@@ -33,12 +36,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onNavigateToMobile,
   onNavigateToRequests,
 }) => {
+  const { t, isRTL } = useLanguage();
   const {
     currentEmployee,
     todayRecord,
     employees,
+    attendanceRecords,
     leaveRequests,
     permissionRequests,
+    workSchedule,
+    taPolicy,
+    holidayDefinitions,
   } = useAttendance();
 
   // Real-time clock for live tracking
@@ -149,70 +157,61 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const totalPendingRequests = (pendingLeaves || []).length + (pendingPermissions || []).length;
 
   return (
-    <div id="homepage-dashboard-view" className="max-w-7xl mx-auto space-y-6 pb-12">
+    <div id="homepage-dashboard-view" className="max-w-7xl mx-auto space-y-3 pb-2 text-stone-900">
       {/* Top Welcome Header with Current Date & Real-time Live Clock */}
-      <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-stone-600 bg-[#ede4d6] border border-[#ded4c5] px-2.5 py-0.5 rounded-full">
-              Workspace Overview
-            </span>
-            <span className="text-xs text-stone-500 font-medium">
-              {currentTime.toLocaleDateString(undefined, {
-                weekday: 'long',
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-              })}
+      <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-xl px-4 py-2.5 shadow-2xs flex flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          {currentEmployee?.avatar ? (
+            <img
+              src={currentEmployee.avatar}
+              alt={currentEmployee.name || 'User'}
+              className="w-8 h-8 rounded-full object-cover ring-2 ring-stone-200/80 border border-stone-300 shadow-2xs shrink-0"
+              referrerPolicy="no-referrer"
+            />
+          ) : (
+            <div className="w-8 h-8 rounded-full bg-stone-900 text-stone-50 border border-stone-700 flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+              {currentEmployee?.name ? currentEmployee.name.charAt(0).toUpperCase() : 'U'}
+            </div>
+          )}
+          <div className="flex items-center gap-2 truncate">
+            <h1 className="text-base sm:text-lg font-extrabold text-stone-900 tracking-tight truncate">
+              Welcome back, {currentEmployee?.name || 'Staff'}
+            </h1>
+            <span className="text-xs text-stone-500 font-medium hidden sm:inline truncate">
+              • {currentEmployee?.designation || 'Team Member'} ({currentEmployee?.department || 'General'})
             </span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-extrabold text-stone-900 tracking-tight">
-            Welcome back, {currentEmployee?.name || 'Staff'}
-          </h1>
-          <p className="text-xs sm:text-sm text-stone-600 font-medium">
-            {currentEmployee?.designation || 'Team Member'} • {currentEmployee?.department || 'General'}
-          </p>
         </div>
 
         {/* Live Digital Clock Badge */}
-        <div className="flex items-center gap-3 bg-white border border-[#ded4c5] px-3.5 py-2 rounded-xl shadow-2xs self-start md:self-auto">
-          <div className="w-8 h-8 rounded-lg bg-stone-900 text-stone-50 flex items-center justify-center shrink-0">
-            <Clock className="w-4 h-4 text-amber-400" />
-          </div>
-          <div>
-            <span className="text-[9px] uppercase font-bold text-stone-400 block tracking-widest leading-none mb-1">
-              System Time
-            </span>
-            <span className="font-mono font-extrabold text-stone-900 text-sm sm:text-base tracking-tight leading-none">
-              {currentTime.toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: true,
-              })}
-            </span>
-          </div>
+        <div className="flex items-center gap-2 bg-white border border-[#ded4c5] px-3 py-1 rounded-lg shadow-2xs shrink-0">
+          <Clock className="w-3.5 h-3.5 text-amber-600" />
+          <span className="font-mono font-bold text-stone-900 text-xs sm:text-sm tracking-tight">
+            {currentTime.toLocaleTimeString([], {
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: true,
+            })}
+          </span>
         </div>
       </div>
 
       {/* Main Grid: Shift Timings & Leave Balances (Left 2 cols) vs Manager Bubble & Mobile Notice (Right 1 col) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {/* LEFT COLUMN: Shift Timings + LEAVE & PERMISSION BALANCES (Span 2) */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-3">
           {/* 1. TODAY'S ATTENDANCE STATUS & TIMINGS CARD */}
-          <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl p-5 sm:p-6 shadow-xs space-y-5">
-            <div className="flex items-center justify-between border-b border-[#ded4c5] pb-3.5">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-[#ede4d6] border border-[#ded4c5] flex items-center justify-center text-stone-800 shrink-0">
-                  <Timer className="w-4 h-4" />
+          <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-xl p-3.5 shadow-2xs space-y-3">
+            <div className="flex items-center justify-between border-b border-[#ded4c5] pb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-lg bg-[#ede4d6] border border-[#ded4c5] flex items-center justify-center text-stone-800 shrink-0">
+                  <Timer className="w-3.5 h-3.5 text-stone-800" />
                 </div>
                 <div>
-                  <h2 className="text-base sm:text-lg font-bold text-stone-900 leading-tight">
+                  <h2 className="text-sm font-bold text-stone-900 leading-tight">
                     Today&apos;s Attendance & Shift Timings
                   </h2>
-                  <p className="text-xs text-stone-500">
-                    Standard 8-Hour Workday Tracker
-                  </p>
                 </div>
               </div>
 
@@ -221,16 +220,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   <button
                     type="button"
                     onClick={onNavigateToMobile}
-                    className="text-stone-700 hover:text-stone-950 text-xs font-semibold px-2.5 py-1 bg-white hover:bg-stone-100 border border-[#ded4c5] rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                    className="text-stone-700 hover:text-stone-950 text-[11px] font-semibold px-2 py-0.5 bg-white hover:bg-stone-100 border border-[#ded4c5] rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
                   >
-                    <span>Attendance Logs</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
+                    <span>Logs</span>
+                    <ChevronRight className="w-3 h-3" />
                   </button>
                 )}
 
                 {/* Status Badge */}
                 <span
-                  className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border shadow-2xs flex items-center gap-1.5 ${
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full border shadow-2xs flex items-center gap-1 ${
                     isCheckedOut
                       ? 'bg-stone-200 text-stone-800 border-stone-300'
                       : isCheckedIn
@@ -249,9 +248,9 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   />
                   <span>
                     {isCheckedOut
-                      ? 'Shift Completed'
+                      ? 'Completed'
                       : isCheckedIn
-                      ? 'On Duty (Active)'
+                      ? 'Active'
                       : 'Not Checked In'}
                   </span>
                 </span>
@@ -259,41 +258,35 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
 
             {/* Check-In & Check-Out Times Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {/* Check-In Block */}
-              <div className="bg-white border border-[#ded4c5] rounded-xl p-4 space-y-2 relative overflow-hidden shadow-2xs">
+              <div className="bg-white border border-[#ded4c5] rounded-lg p-3 space-y-1 relative overflow-hidden shadow-2xs">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-stone-600" />
-                    <span>Check-In Time</span>
+                  <span className="text-[11px] font-bold text-stone-500 uppercase tracking-wide flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-stone-600" />
+                    <span>Check-In</span>
                   </span>
                   {isCheckedIn && (
-                    <span className="text-[10px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
+                    <span className="text-[9px] font-mono bg-emerald-50 text-emerald-800 border border-emerald-200 px-1.5 py-0.2 rounded font-bold">
                       Recorded
                     </span>
                   )}
                 </div>
 
-                <div className="pt-1">
-                  <div className="text-2xl sm:text-3xl font-extrabold font-mono text-stone-900 tracking-tight">
+                <div className="pt-0.5 flex items-baseline justify-between">
+                  <div className="text-xl font-extrabold font-mono text-stone-900 tracking-tight">
                     {checkInFormatted.formatted}
                   </div>
-                  {isCheckedIn ? (
-                    <div className="text-[11px] text-stone-500 mt-1 flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>
-                        Punch time: <strong className="font-mono text-stone-700">{checkInFormatted.raw}</strong>
-                      </span>
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-stone-400 mt-1">
-                      Pending mobile check-in
-                    </p>
+                  {isCheckedIn && (
+                    <span className="text-[10px] text-stone-500 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      <span className="font-mono">{checkInFormatted.raw}</span>
+                    </span>
                   )}
                 </div>
 
                 {todayRecord?.officeLocationName && (
-                  <div className="pt-2 mt-2 border-t border-[#f0eae1] flex items-center gap-1 text-[11px] text-stone-600 font-medium">
+                  <div className="pt-1 mt-1 border-t border-[#f0eae1] flex items-center gap-1 text-[10px] text-stone-600 font-medium truncate">
                     <MapPin className="w-3 h-3 text-stone-500 shrink-0" />
                     <span className="truncate">{todayRecord.officeLocationName}</span>
                   </div>
@@ -302,7 +295,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
               {/* Check-Out / Expected Check-Out Block */}
               <div
-                className={`border rounded-xl p-4 space-y-2 relative overflow-hidden shadow-2xs ${
+                className={`border rounded-lg p-3 space-y-1 relative overflow-hidden shadow-2xs ${
                   isCheckedOut
                     ? 'bg-white border-[#ded4c5]'
                     : isCheckedIn
@@ -311,70 +304,50 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-stone-500 uppercase tracking-wide flex items-center gap-1.5">
-                    <Timer className="w-3.5 h-3.5 text-stone-700" />
-                    <span>
-                      {isCheckedOut ? 'Check-Out Time' : 'Expected Check-Out'}
-                    </span>
+                  <span className="text-[11px] font-bold text-stone-500 uppercase tracking-wide flex items-center gap-1">
+                    <Timer className="w-3 h-3 text-stone-700" />
+                    <span>{isCheckedOut ? 'Check-Out' : 'Expected Check-Out'}</span>
                   </span>
 
                   {isCheckedOut ? (
-                    <span className="text-[10px] font-mono bg-stone-100 text-stone-800 border border-stone-300 px-2 py-0.5 rounded-full font-bold">
-                      Completed
+                    <span className="text-[9px] font-mono bg-stone-100 text-stone-800 border border-stone-300 px-1.5 py-0.2 rounded font-bold">
+                      Done
                     </span>
                   ) : isCheckedIn ? (
-                    <span className="text-[10px] font-bold bg-stone-900 text-stone-50 px-2 py-0.5 rounded-full">
-                      +8h Shift Target
+                    <span className="text-[9px] font-bold bg-stone-900 text-stone-50 px-1.5 py-0.2 rounded">
+                      +8h Target
                     </span>
                   ) : (
-                    <span className="text-[10px] text-stone-400 font-medium">8h Default</span>
+                    <span className="text-[9px] text-stone-400 font-medium">8h Default</span>
                   )}
                 </div>
 
-                <div className="pt-1">
-                  <div className="text-2xl sm:text-3xl font-extrabold font-mono text-stone-900 tracking-tight">
+                <div className="pt-0.5 flex items-baseline justify-between">
+                  <div className="text-xl font-extrabold font-mono text-stone-900 tracking-tight">
                     {isCheckedOut
                       ? checkOutFormatted.formatted
                       : isCheckedIn && expectedCheckoutData
                       ? expectedCheckoutData.formatted12
                       : '--:--'}
                   </div>
-
-                  {isCheckedOut ? (
-                    <div className="text-[11px] text-stone-600 mt-1 flex items-center gap-1">
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>
-                        Work Duration:{' '}
-                        <strong className="font-mono text-stone-900">
-                          {todayRecord?.workDurationMinutes
-                            ? `${Math.floor(todayRecord.workDurationMinutes / 60)}h ${todayRecord.workDurationMinutes % 60}m`
-                            : '8h 00m'}
-                        </strong>
-                      </span>
-                    </div>
-                  ) : isCheckedIn && expectedCheckoutData ? (
-                    <div className="text-[11px] text-stone-700 mt-1 flex items-center gap-1.5 font-medium">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                      <span>
-                        Target: <strong className="font-mono text-stone-900">{expectedCheckoutData.formatted24}</strong> (Check-in + 8 hrs)
-                      </span>
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-stone-400 mt-1">
-                      Calculated upon mobile check-in
-                    </p>
+                  {isCheckedOut && (
+                    <span className="text-[10px] font-mono text-stone-700">
+                      {todayRecord?.workDurationMinutes
+                        ? `${Math.floor(todayRecord.workDurationMinutes / 60)}h ${todayRecord.workDurationMinutes % 60}m`
+                        : '8h 00m'}
+                    </span>
                   )}
                 </div>
 
                 {isCheckedIn && !isCheckedOut && expectedCheckoutData && (
-                  <div className="pt-2 mt-2 border-t border-[#ded4c5] flex items-center justify-between text-[11px]">
+                  <div className="pt-1 mt-1 border-t border-[#ded4c5] flex items-center justify-between text-[10px]">
                     <span className="text-stone-600">
                       Elapsed: <strong className="text-stone-900 font-mono">{expectedCheckoutData.elapsedH}h {expectedCheckoutData.elapsedM}m</strong>
                     </span>
                     <span className="text-stone-800 font-semibold">
                       {expectedCheckoutData.isOvertime
                         ? `Overtime: +${expectedCheckoutData.overtimeMinutes}m`
-                        : `Remaining: ${expectedCheckoutData.remainingH}h ${expectedCheckoutData.remainingM}m`}
+                        : `Rem: ${expectedCheckoutData.remainingH}h ${expectedCheckoutData.remainingM}m`}
                     </span>
                   </div>
                 )}
@@ -383,16 +356,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
             {/* When not checked in yet today */}
             {!isCheckedIn && (
-              <div className="bg-[#ede4d6] border border-[#ded4c5] rounded-xl p-3.5 flex items-start gap-3 text-xs text-stone-700">
-                <AlertCircle className="w-4 h-4 text-stone-600 shrink-0 mt-0.5" />
-                <div className="space-y-0.5">
-                  <p className="font-semibold text-stone-900">
-                    No Attendance Punched Today
-                  </p>
-                  <p className="text-stone-600">
-                    Please use the mobile phone application to punch your daily check-in within your authorized office geofence. Once checked in, your expected checkout time will automatically compute your 8-hour shift target.
-                  </p>
-                </div>
+              <div className="bg-[#ede4d6] border border-[#ded4c5] rounded-lg p-2.5 flex items-center gap-2 text-xs text-stone-700">
+                <AlertCircle className="w-4 h-4 text-stone-600 shrink-0" />
+                <p className="text-[11px] font-medium text-stone-800 leading-tight">
+                  No attendance punched today. Use mobile app to punch check-in within office geofence.
+                </p>
               </div>
             )}
           </div>
@@ -400,257 +368,191 @@ export const Dashboard: React.FC<DashboardProps> = ({
           {/* 2. SIMPLE, COMPACT LEAVE & PERMISSION BALANCES CARD */}
           <div
             id="leave-permission-balances-card"
-            className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl p-5 shadow-xs space-y-4"
+            className="bg-[#f8f5ef] border border-[#ded4c5] rounded-xl p-3.5 shadow-2xs space-y-2.5"
           >
             {/* Clean Header */}
-            <div className="flex items-center justify-between border-b border-[#ded4c5] pb-3">
+            <div className="flex items-center justify-between border-b border-[#ded4c5] pb-2">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-stone-900 text-stone-50 flex items-center justify-center text-xs">
+                <div className="w-6 h-6 rounded-lg bg-stone-900 text-stone-50 flex items-center justify-center text-xs">
                   <CalendarDays className="w-3.5 h-3.5 text-amber-400" />
                 </div>
-                <h3 className="text-sm font-bold text-stone-900">
+                <h3 className="text-xs sm:text-sm font-bold text-stone-900">
                   Leave & Permission Balances
                 </h3>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold bg-[#ede4d6] border border-[#ded4c5] text-stone-800 px-2.5 py-0.5 rounded-full">
-                  Total: <strong className="font-mono">{totalLeaveBalance}d</strong>
+                <span className="text-[10px] font-bold bg-[#ede4d6] border border-[#ded4c5] text-stone-800 px-2 py-0.5 rounded-full">
+                  Annual: <strong className="font-mono">{annualBalance}d</strong>
                 </span>
                 {onNavigateToRequests && (
                   <button
                     type="button"
                     onClick={onNavigateToRequests}
-                    className="text-stone-900 hover:text-stone-700 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer bg-white px-2.5 py-0.5 rounded-lg border border-[#ded4c5] shadow-2xs"
+                    className="text-stone-900 hover:text-stone-700 text-[11px] font-semibold flex items-center gap-1 transition-colors cursor-pointer bg-white px-2 py-0.5 rounded-lg border border-[#ded4c5] shadow-2xs"
                   >
-                    <PlusCircle className="w-3.5 h-3.5 text-amber-600" />
+                    <PlusCircle className="w-3 h-3 text-amber-600" />
                     <span>Apply</span>
                   </button>
                 )}
               </div>
             </div>
 
-            {/* 4-Column Compact Metric Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {/* Casual Leave */}
-              <div className="bg-white border border-[#ded4c5] rounded-xl p-3 space-y-1.5 shadow-2xs transition-all hover:border-stone-400">
-                <div className="flex items-center justify-between text-stone-500">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Casual</span>
-                  <div className="w-6 h-6 rounded-lg bg-amber-50 border border-amber-200/60 flex items-center justify-center">
-                    <Coffee className="w-3 h-3 text-amber-700" />
-                  </div>
-                </div>
-                <div className="text-xl font-extrabold font-mono text-stone-900 leading-tight">
-                  {casualBalance} <span className="text-xs font-sans font-medium text-stone-500">days</span>
-                </div>
-                <div className="pt-0.5">
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 border border-stone-200/80 inline-block">
-                    Quota: 12d
-                  </span>
-                </div>
-              </div>
-
-              {/* Sick Leave */}
-              <div className="bg-white border border-[#ded4c5] rounded-xl p-3 space-y-1.5 shadow-2xs transition-all hover:border-stone-400">
-                <div className="flex items-center justify-between text-stone-500">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Sick</span>
-                  <div className="w-6 h-6 rounded-lg bg-emerald-50 border border-emerald-200/60 flex items-center justify-center">
-                    <HeartPulse className="w-3 h-3 text-emerald-600" />
-                  </div>
-                </div>
-                <div className="text-xl font-extrabold font-mono text-stone-900 leading-tight">
-                  {sickBalance} <span className="text-xs font-sans font-medium text-stone-500">days</span>
-                </div>
-                <div className="pt-0.5">
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 border border-stone-200/80 inline-block">
-                    Quota: 12d
-                  </span>
-                </div>
-              </div>
-
+            {/* 2-Column Compact Metric Grid: Annual Leave & Permission Balance */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {/* Annual Leave */}
-              <div className="bg-white border border-[#ded4c5] rounded-xl p-3 space-y-1.5 shadow-2xs transition-all hover:border-stone-400">
+              <div className="bg-white border border-[#ded4c5] rounded-lg p-3 space-y-1 shadow-2xs">
                 <div className="flex items-center justify-between text-stone-500">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Annual</span>
-                  <div className="w-6 h-6 rounded-lg bg-purple-50 border border-purple-200/60 flex items-center justify-center">
-                    <Plane className="w-3 h-3 text-purple-600" />
-                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-600">Annual Leave Balance</span>
+                  <Plane className="w-3.5 h-3.5 text-purple-600" />
                 </div>
-                <div className="text-xl font-extrabold font-mono text-stone-900 leading-tight">
-                  {annualBalance} <span className="text-xs font-sans font-medium text-stone-500">days</span>
+                <div className="text-xl font-extrabold font-mono text-stone-900 leading-none">
+                  {annualBalance} <span className="text-xs font-sans font-medium text-stone-500">days available</span>
                 </div>
-                <div className="pt-0.5">
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 border border-stone-200/80 inline-block">
-                    Quota: 24d
-                  </span>
-                </div>
+                <span className="text-[10px] text-stone-500 block font-medium pt-0.5">Annual Quota: 24d</span>
               </div>
 
               {/* Short Permission */}
-              <div className="bg-white border border-[#ded4c5] rounded-xl p-3 space-y-1.5 shadow-2xs transition-all hover:border-stone-400">
+              <div className="bg-white border border-[#ded4c5] rounded-lg p-3 space-y-1 shadow-2xs">
                 <div className="flex items-center justify-between text-stone-500">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500">Permission</span>
-                  <div className="w-6 h-6 rounded-lg bg-blue-50 border border-blue-200/60 flex items-center justify-center">
-                    <Hourglass className="w-3 h-3 text-blue-600" />
-                  </div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-600">Permission Balance</span>
+                  <Hourglass className="w-3.5 h-3.5 text-blue-600" />
                 </div>
-                <div className="text-xl font-extrabold font-mono text-stone-900 leading-tight">
-                  {remainingPermissionsThisMonth} <span className="text-xs font-sans font-medium text-stone-500">/ 2 left</span>
+                <div className="text-xl font-extrabold font-mono text-stone-900 leading-none">
+                  {remainingPermissionsThisMonth} <span className="text-xs font-sans font-medium text-stone-500">/ 2 left this month</span>
                 </div>
-                <div className="pt-0.5">
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 border border-stone-200/80 inline-block">
-                    Max 2h / req
-                  </span>
-                </div>
+                <span className="text-[10px] text-stone-500 block font-medium pt-0.5">Max 2 hours per instance</span>
               </div>
-            </div>
-
-            {/* Subtle Footer */}
-            <div className="flex items-center justify-between text-xs text-stone-500 pt-1">
-              <span>
-                {totalPendingRequests > 0 ? (
-                  <span className="text-amber-800 font-semibold font-mono text-[11px] bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                    ● {totalPendingRequests} request(s) awaiting manager review
-                  </span>
-                ) : (
-                  <span className="text-[11px] text-stone-500 font-medium">All submitted requests up-to-date</span>
-                )}
-              </span>
-              {onNavigateToRequests && (
-                <button
-                  type="button"
-                  onClick={onNavigateToRequests}
-                  className="text-stone-700 hover:text-stone-950 font-semibold flex items-center gap-1 transition-colors cursor-pointer text-[11px]"
-                >
-                  <span>Request Center</span>
-                  <ChevronRight className="w-3 h-3" />
-                </button>
-              )}
             </div>
           </div>
         </div>
 
         {/* RIGHT COLUMN: Manager Information Bubble & Mobile Application Notice */}
-        <div className="space-y-6">
+        <div className="space-y-3">
           {/* 3. REPORTING MANAGER INFORMATION BUBBLE */}
           <div
             id="manager-info-bubble"
-            className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl p-5 shadow-xs space-y-4 relative overflow-hidden"
+            className="bg-[#f8f5ef] border border-[#ded4c5] rounded-xl p-3.5 shadow-2xs space-y-2.5 relative overflow-hidden"
           >
             {/* Header */}
-            <div className="flex items-center justify-between border-b border-[#ded4c5] pb-3">
+            <div className="flex items-center justify-between border-b border-[#ded4c5] pb-2">
               <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-stone-900 text-stone-50 flex items-center justify-center text-xs">
+                <div className="w-6 h-6 rounded-lg bg-stone-900 text-stone-50 flex items-center justify-center text-xs">
                   <Award className="w-3.5 h-3.5 text-amber-400" />
                 </div>
-                <h3 className="text-sm font-bold text-stone-900">
+                <h3 className="text-xs sm:text-sm font-bold text-stone-900">
                   My Manager
                 </h3>
               </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500 bg-[#ede4d6] border border-[#ded4c5] px-2 py-0.5 rounded-full">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-stone-500 bg-[#ede4d6] border border-[#ded4c5] px-2 py-0.2 rounded-full">
                 Reporting Lead
               </span>
             </div>
 
             {manager ? (
-              <div className="space-y-3.5">
+              <div className="space-y-2">
                 {/* Manager Avatar & Name Bubble */}
-                <div className="bg-white border border-[#ded4c5] rounded-xl p-3.5 flex items-center gap-3 shadow-2xs">
+                <div className="bg-white border border-[#ded4c5] rounded-lg p-2.5 flex items-center gap-2.5 shadow-2xs">
                   <div className="relative shrink-0">
                     <img
                       src={manager.avatar}
                       alt={manager.name}
-                      className="w-12 h-12 rounded-full object-cover ring-2 ring-white border border-stone-300 shadow-xs shrink-0"
+                      className="w-10 h-10 rounded-full object-cover ring-2 ring-white border border-stone-300 shadow-2xs shrink-0"
                     />
-                    <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-500 ring-2 ring-white" />
+                    <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
                   </div>
 
                   <div className="space-y-0.5 min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <h4 className="font-bold text-stone-900 text-sm truncate">
-                        {manager.name}
-                      </h4>
-                    </div>
-                    <p className="text-xs text-stone-700 font-medium truncate">
+                    <h4 className="font-bold text-stone-900 text-xs truncate">
+                      {manager.name}
+                    </h4>
+                    <p className="text-[11px] text-stone-700 font-medium truncate">
                       {manager.designation}
                     </p>
-                    <p className="text-[10px] text-stone-500 font-mono">
+                    <p className="text-[10px] text-stone-500 font-mono truncate">
                       {manager.employeeCode} • {manager.department}
                     </p>
                   </div>
                 </div>
 
-                {/* Manager Contact Bubble Details */}
-                <div className="bg-white border border-[#ded4c5] rounded-xl p-3 space-y-2 text-xs shadow-2xs">
-                  <div className="flex items-center gap-2.5 text-stone-700">
-                    <Mail className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                    <span className="font-medium truncate text-[11px]">{manager.email}</span>
+                {/* Manager Contact Details */}
+                <div className="bg-white border border-[#ded4c5] rounded-lg p-2 space-y-1 text-[11px] shadow-2xs">
+                  <div className="flex items-center gap-2 text-stone-700 truncate">
+                    <Mail className="w-3 h-3 text-stone-400 shrink-0" />
+                    <span className="truncate">{manager.email}</span>
                   </div>
-                  <div className="flex items-center gap-2.5 text-stone-700">
-                    <Phone className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                    <span className="font-mono text-[11px]">{manager.phone}</span>
-                  </div>
-                  <div className="flex items-center gap-2.5 text-stone-700">
-                    <Building2 className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                    <span className="truncate text-[11px]">Sharjah Archaeology Authority HQ</span>
+                  <div className="flex items-center gap-2 text-stone-700 truncate">
+                    <Phone className="w-3 h-3 text-stone-400 shrink-0" />
+                    <span className="font-mono">{manager.phone}</span>
                   </div>
                 </div>
 
-                {/* Quick Action Button to Requests */}
+                {/* Quick Action Button */}
                 {onNavigateToRequests && (
                   <button
                     type="button"
                     onClick={onNavigateToRequests}
-                    className="w-full bg-[#ede4d6] hover:bg-[#e4d9c7] border border-[#ded4c5] text-stone-900 font-bold px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-colors cursor-pointer shadow-2xs active:scale-98"
+                    className="w-full bg-[#ede4d6] hover:bg-[#e4d9c7] border border-[#ded4c5] text-stone-900 font-bold px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition-colors cursor-pointer shadow-2xs"
                   >
                     <span className="flex items-center gap-1.5">
-                      <Send className="w-3.5 h-3.5 text-stone-700" />
-                      <span>Send Request to {manager?.name ? manager.name.split(' ')[0] : 'Manager'}</span>
+                      <Send className="w-3 h-3 text-stone-700" />
+                      <span>Send Request</span>
                     </span>
-                    <ChevronRight className="w-4 h-4 text-stone-600" />
+                    <ChevronRight className="w-3.5 h-3.5 text-stone-600" />
                   </button>
                 )}
               </div>
             ) : (
-              <div className="bg-white border border-[#ded4c5] p-4 rounded-xl text-center space-y-2 text-xs shadow-2xs">
+              <div className="bg-white border border-[#ded4c5] p-3 rounded-lg text-center space-y-1 text-xs shadow-2xs">
                 <p className="font-bold text-stone-800">
                   Senior Management Level
                 </p>
-                <p className="text-stone-500 text-[11px]">
-                  You lead the division with {(directReports || []).length} direct team members reporting to your approval desk.
+                <p className="text-stone-500 text-[10px]">
+                  Leading division with {(directReports || []).length} direct report(s).
                 </p>
               </div>
             )}
           </div>
 
-          {/* 4. MOBILE APPLICATION NOTICE & POLICY */}
-          <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-2xl p-5 shadow-xs space-y-3.5">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-stone-900 text-stone-50 flex items-center justify-center">
-                <Smartphone className="w-4 h-4" />
+          {/* 4. VIOLATIONS BUBBLE */}
+          <ViolationsCard
+            currentEmployee={currentEmployee}
+            employees={employees || []}
+            attendanceRecords={attendanceRecords || []}
+            leaveRequests={leaveRequests || []}
+            permissionRequests={permissionRequests || []}
+            workSchedule={workSchedule}
+            taPolicy={taPolicy}
+            holidayDefinitions={holidayDefinitions || []}
+            onNavigateToRequests={onNavigateToRequests}
+            onNavigateToMobile={onNavigateToMobile}
+          />
+
+          {/* 5. MOBILE APPLICATION NOTICE & POLICY */}
+          <div className="bg-[#f8f5ef] border border-[#ded4c5] rounded-xl p-3.5 shadow-2xs space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg bg-stone-900 text-stone-50 flex items-center justify-center">
+                <Smartphone className="w-3.5 h-3.5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-stone-900">
+                <h3 className="text-xs sm:text-sm font-bold text-stone-900">
                   Mobile Attendance System
                 </h3>
-                <p className="text-[11px] text-stone-500">
-                  GPS Geofencing Policy
-                </p>
               </div>
             </div>
 
-            <div className="bg-white border border-[#ded4c5] rounded-xl p-3.5 space-y-2 text-xs text-stone-700">
-              <div className="flex items-start gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
-                <p className="leading-relaxed text-[11px] text-stone-600">
-                  Daily <strong>check-in</strong> and <strong>check-out</strong> are executed strictly via the <strong>Mobile Phone Application</strong> to ensure accurate GPS geofence verification at your designated office branch.
+            <div className="bg-white border border-[#ded4c5] rounded-lg p-2.5 space-y-1.5 text-[11px] text-stone-700">
+              <div className="flex items-start gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-700 shrink-0 mt-0.5" />
+                <p className="leading-snug text-[10px] text-stone-600">
+                  Check-in and check-out are punched on the <strong>Mobile App</strong> with GPS geofence verification.
                 </p>
               </div>
 
-              <div className="pt-2 border-t border-[#ded4c5] flex items-center justify-between text-[11px]">
-                <span className="text-stone-500 font-medium">Platform Mode</span>
-                <span className="bg-[#ede4d6] text-stone-800 font-mono px-2 py-0.5 rounded border border-[#ded4c5]">
-                  Mobile App Client
+              <div className="pt-1 border-t border-[#ded4c5] flex items-center justify-between text-[10px]">
+                <span className="text-stone-500 font-medium">Status</span>
+                <span className="bg-[#ede4d6] text-stone-800 font-mono px-1.5 py-0.2 rounded border border-[#ded4c5]">
+                  GPS Geofence Active
                 </span>
               </div>
             </div>
