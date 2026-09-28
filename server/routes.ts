@@ -112,7 +112,8 @@ apiRouter.post('/auth/login', rateLimiter(15, 60000), (req: Request, res: Respon
       (e.username && e.username.toLowerCase() === normalized) ||
       e.email.toLowerCase() === normalized ||
       e.employeeCode.toLowerCase() === normalized ||
-      (normalized === 'admin' && e.role === 'admin')
+      (normalized === 'admin' && e.role === 'admin') ||
+      (normalized === 'danish' && e.name.toLowerCase().includes('danish'))
   );
 
   if (!employee) {

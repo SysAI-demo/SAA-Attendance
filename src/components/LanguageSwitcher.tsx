@@ -5,9 +5,10 @@ import { Globe, Check } from 'lucide-react';
 interface LanguageSwitcherProps {
   variant?: 'pill' | 'compact' | 'icon' | 'login';
   className?: string;
+  theme?: 'light' | 'dark';
 }
 
-export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ variant = 'pill', className = '' }) => {
+export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ variant = 'pill', className = '', theme = 'light' }) => {
   const { language, setLanguage, toggleLanguage, isRTL } = useLanguage();
 
   if (variant === 'icon') {
@@ -25,31 +26,50 @@ export const LanguageSwitcher: React.FC<LanguageSwitcherProps> = ({ variant = 'p
   }
 
   if (variant === 'login') {
+    const isDark = theme === 'dark';
     return (
-      <div className={`flex items-center bg-stone-100/90 p-1 rounded-2xl border border-stone-200/80 shadow-inner ${className}`}>
+      <div
+        className={`flex items-center p-1 rounded-2xl border shadow-inner ${
+          isDark
+            ? 'bg-[#151A24] border-[#2B3547]'
+            : 'bg-stone-100/90 border-stone-200/80'
+        } ${className}`}
+      >
         <button
           type="button"
           onClick={() => setLanguage('en')}
           className={`flex-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
             language === 'en'
-              ? 'bg-white text-emerald-700 shadow-xs border border-stone-200/60'
+              ? isDark
+                ? 'bg-[#242D3D] text-amber-300 shadow-xs border border-amber-500/30'
+                : 'bg-white text-emerald-700 shadow-xs border border-stone-200/60'
+              : isDark
+              ? 'text-stone-400 hover:text-stone-200'
               : 'text-stone-500 hover:text-stone-800'
           }`}
         >
           <span>English</span>
-          {language === 'en' && <Check className="w-3 h-3 text-emerald-600" />}
+          {language === 'en' && (
+            <Check className={`w-3 h-3 ${isDark ? 'text-amber-400' : 'text-emerald-600'}`} />
+          )}
         </button>
         <button
           type="button"
           onClick={() => setLanguage('ar')}
           className={`flex-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
             language === 'ar'
-              ? 'bg-white text-emerald-700 shadow-xs border border-stone-200/60'
+              ? isDark
+                ? 'bg-[#242D3D] text-amber-300 shadow-xs border border-amber-500/30'
+                : 'bg-white text-emerald-700 shadow-xs border border-stone-200/60'
+              : isDark
+              ? 'text-stone-400 hover:text-stone-200'
               : 'text-stone-500 hover:text-stone-800'
           }`}
         >
           <span>العربية</span>
-          {language === 'ar' && <Check className="w-3 h-3 text-emerald-600" />}
+          {language === 'ar' && (
+            <Check className={`w-3 h-3 ${isDark ? 'text-amber-400' : 'text-emerald-600'}`} />
+          )}
         </button>
       </div>
     );

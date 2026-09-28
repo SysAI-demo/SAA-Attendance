@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAttendance } from '../context/AttendanceContext';
 import { useLanguage } from '../context/LanguageContext';
 import { LanguageSwitcher } from './LanguageSwitcher';
@@ -51,6 +52,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     logout,
   } = useAttendance();
   const { t } = useLanguage();
+  const [hoveredTab, setHoveredTab] = useState<NavigationTab | null>(null);
 
   // If a non-HR/Admin user is on employees, definitions, or locations tab, safely redirect back to dashboard
   React.useEffect(() => {
@@ -82,7 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           },
           {
             id: 'definitions' as NavigationTab,
-            label: t('nav.definitions', 'Settings & Definitions'),
+            label: t('nav.definitions', 'Definitions'),
             icon: SlidersHorizontal,
             badge: 'Admin/HR',
           },
@@ -94,8 +96,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <>
       {/* Mobile Backdrop Overlay */}
       {mobileOpen && (
-        <div
+        <motion.div
           id="sidebar-backdrop"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
           onClick={() => setMobileOpen(false)}
           className="fixed inset-0 z-40 bg-stone-900/40 backdrop-blur-xs md:hidden"
         />
@@ -146,63 +151,158 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
 
         {/* Floating Navigation Menu Items */}
-        <div className="flex-1 px-3 py-3.5 space-y-1.5 overflow-y-auto no-scrollbar">
+        <div
+          className="flex-1 px-3 py-3.5 space-y-1.5 overflow-y-auto no-scrollbar relative"
+          onMouseLeave={() => setHoveredTab(null)}
+        >
           <div className="px-3 pt-1 pb-1.5 text-[9px] font-extrabold uppercase tracking-widest text-stone-400">
             Navigation
           </div>
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentTab === item.id;
+            const isHovered = hoveredTab === item.id;
+
             return (
-              <button
+              <motion.button
                 key={item.id}
                 id={`nav-btn-${item.id}`}
                 type="button"
+                onMouseEnter={() => setHoveredTab(item.id)}
                 onClick={() => {
                   setCurrentTab(item.id);
                   setMobileOpen(false);
                 }}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-xs font-bold transition-all cursor-pointer group ${
+                whileTap={{ scale: 0.98 }}
+                whileHover={{ x: 2 }}
+                transition={{ type: 'spring', stiffness: 450, damping: 28 }}
+                className={`relative w-full flex items-center justify-between px-3 py-2.5 rounded-2xl text-xs font-bold cursor-pointer select-none ${
                   isActive
-                    ? 'bg-stone-900 text-stone-50 shadow-md shadow-stone-900/15 translate-x-0.5'
-                    : 'text-stone-600 hover:text-stone-950 hover:bg-[#ece4d6]/70 hover:translate-x-0.5'
+                    ? 'text-stone-50'
+                    : 'text-stone-600 hover:text-stone-950'
                 }`}
               >
-                <div className="flex items-center gap-2.5">
+                {/* Active Sliding Pill Animation */}
+                {isActive && (
+                  <motion.div
+                    layoutId="sidebar-active-pill"
+                    className="absolute inset-0 rounded-2xl bg-stone-900 shadow-md shadow-stone-900/20 z-0"
+                    transition={{
+                      type: 'spring',
+                      stiffness: 400,
+                      damping: 32,
+                    }}
+                  />
+                )}
+
+                {/* Left Active Accent Pip */}
+                {isActive && (
+                  <motion.div
+                    layoutId="sidebar-active-accent-pip"
+                    className="absolute left-1.5 top-1/2 -translate-y-1/2 w-1 h-5 rounded-full bg-gradient-to-b from-amber-300 via-amber-400 to-amber-500 shadow-[0_0_8px_rgba(251,191,36,0.7)] z-10"
+                    transition={{
+                      type: 'spring',
+                      stiffness: 420,
+                      damping: 32,
+                    }}
+                  />
+                )}
+
+                {/* Hover Sliding Pill Animation for Inactive Items */}
+                <AnimatePresence>
+                  {isHovered && !isActive && (
+                    <motion.div
+                      layoutId="sidebar-hover-pill"
+                      initial={{ opacity: 0, scale: 0.97 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      exit={{ opacity: 0, scale: 0.97 }}
+                      transition={{
+                        type: 'spring',
+                        stiffness: 450,
+                        damping: 30,
+                      }}
+                      className="absolute inset-0 rounded-2xl bg-[#ece4d6]/80 border border-[#ded4c5]/70 z-0 shadow-2xs"
+                    />
+                  )}
+                </AnimatePresence>
+
+                {/* Menu Item Content (Icon + Label) */}
+                <div className="relative z-10 flex items-center gap-2.5 pl-1.5">
                   <div
-                    className={`w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
+                    className={`relative w-7 h-7 rounded-xl flex items-center justify-center transition-colors ${
                       isActive
-                        ? 'bg-stone-800 text-amber-400'
-                        : 'bg-stone-100 text-stone-500 group-hover:bg-white group-hover:text-stone-900 group-hover:shadow-2xs'
+                        ? 'text-amber-400'
+                        : isHovered
+                        ? 'text-stone-900'
+                        : 'text-stone-500'
                     }`}
                   >
-                    <Icon className="w-3.5 h-3.5" />
+                    {/* Active Icon Container Animated Background */}
+                    {isActive ? (
+                      <motion.div
+                        layoutId="sidebar-active-icon-box"
+                        className="absolute inset-0 rounded-xl bg-stone-800 shadow-xs z-0"
+                        transition={{
+                          type: 'spring',
+                          stiffness: 420,
+                          damping: 32,
+                        }}
+                      />
+                    ) : (
+                      <div
+                        className={`absolute inset-0 rounded-xl transition-all ${
+                          isHovered
+                            ? 'bg-white shadow-2xs'
+                            : 'bg-stone-100/90'
+                        }`}
+                      />
+                    )}
+
+                    <motion.div
+                      animate={{
+                        scale: isActive ? 1.08 : isHovered ? 1.06 : 1,
+                      }}
+                      transition={{ type: 'spring', stiffness: 350, damping: 20 }}
+                      className="relative z-10"
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                    </motion.div>
                   </div>
-                  <span className="tracking-tight">{item.label}</span>
+
+                  <span className="tracking-tight transition-colors duration-150">
+                    {item.label}
+                  </span>
                 </div>
-                {item.id === 'requests' && pendingCount > 0 && (
-                  <span
-                    className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                      isActive
-                        ? 'bg-amber-400 text-stone-950'
-                        : 'bg-amber-100 text-amber-900 border border-amber-300'
-                    }`}
-                  >
-                    {pendingCount}
-                  </span>
-                )}
-                {item.badge && (
-                  <span
-                    className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-md ${
-                      isActive
-                        ? 'bg-stone-800 text-stone-300'
-                        : 'bg-stone-200/80 text-stone-600'
-                    }`}
-                  >
-                    {item.badge}
-                  </span>
-                )}
-              </button>
+
+                {/* Trailing Badges and Counts */}
+                <div className="relative z-10 flex items-center gap-1.5">
+                  {item.id === 'requests' && pendingCount > 0 && (
+                    <motion.span
+                      layout
+                      initial={{ scale: 0.8 }}
+                      animate={{ scale: 1 }}
+                      className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full shadow-xs ${
+                        isActive
+                          ? 'bg-amber-400 text-stone-950'
+                          : 'bg-amber-100 text-amber-900 border border-amber-300'
+                      }`}
+                    >
+                      {pendingCount}
+                    </motion.span>
+                  )}
+                  {item.badge && (
+                    <span
+                      className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-md transition-colors ${
+                        isActive
+                          ? 'bg-stone-800 text-stone-300 border border-stone-700'
+                          : 'bg-stone-200/80 text-stone-600'
+                      }`}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                </div>
+              </motion.button>
             );
           })}
         </div>
@@ -257,7 +357,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       setCurrentTab('requests');
                       setMobileOpen(false);
                     }}
-                    className="relative p-1.5 rounded-xl bg-stone-50 hover:bg-amber-100/80 text-stone-600 hover:text-amber-950 border border-stone-200 hover:border-amber-300 transition-all cursor-pointer shrink-0"
+                    className="relative p-1.5 rounded-xl bg-stone-50 hover:bg-amber-100/80 text-stone-600 hover:text-amber-950 border border-stone-200 hover:border-amber-300 transition-all cursor-pointer shrink-0 active:scale-95"
                     title={
                       pendingCount > 0
                         ? `${pendingCount} pending requests requiring attention`
@@ -334,3 +434,4 @@ export const Sidebar: React.FC<SidebarProps> = ({
     </>
   );
 };
+

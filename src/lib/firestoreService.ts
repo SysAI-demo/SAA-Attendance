@@ -51,6 +51,26 @@ export const DEFINITION_DOCS = {
   WORK_SCHEDULE: 'def_work_schedule',
 };
 
+export interface FirestoreErrorInfo {
+  error: string;
+  operation: string;
+  path?: string;
+  authInfo?: {
+    userId?: string;
+    email?: string;
+  };
+}
+
+export function handleFirestoreError(error: unknown, operationType: string, path?: string): FirestoreErrorInfo {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    operation: operationType,
+    path,
+  };
+  console.error(`[Firestore Error] ${operationType} on ${path || 'unknown'}:`, errInfo);
+  return errInfo;
+}
+
 /**
  * Sanitizes an object before saving to Firestore to remove undefined values
  * which would trigger Firestore errors.

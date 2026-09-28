@@ -1,6 +1,7 @@
 {
   "version": 2,
-  "lastUpdated": "2026-09-16T07:35:28.145Z",
+  "lastUpdated": "2026-09-21T07:59:27.112Z",
+  "isWiped": true,
   "employees": [
     {
       "id": "emp_admin_danish",
@@ -746,6 +747,5 @@
       ]
     }
   },
-  "deviceBindings": {},
-  "isWiped": true
+  "deviceBindings": {}
 }

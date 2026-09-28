@@ -17,6 +17,13 @@ import { WorkHoursBarChart } from './WorkHoursBarChart';
 import { PunchFeedbackCard, PunchFeedbackState } from './PunchFeedbackCard';
 import { PermissionType, LeaveType, LeaveDurationOption, AppNotification, OfficeLocation } from '../types';
 import { GeofenceMap } from './GeofenceMap';
+import { BiometricAuthModal } from './BiometricAuthModal';
+import {
+  getDeviceBiometricInfo,
+  isIPhoneDevice,
+  setBiometricDeviceOverride,
+  getBiometricDeviceOverride,
+} from '../utils/biometricUtils';
 import confetti from 'canvas-confetti';
 import {
   Clock,
@@ -283,67 +290,20 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
   }, [liveAlertNotification]);
 
   // Biometric Auth Settings State
-  const [biometricEnabled, setBiometricEnabled] = useState<boolean>(() => {
-    return (
-      localStorage.getItem(`saata_biometric_enabled_${currentEmployee?.id}`) === 'true' ||
-      localStorage.getItem('saata_biometric_enabled') === 'true'
-    );
-  });
+  const [biometricEnabled, setBiometricEnabled] = useState<boolean>(true);
   const [showBiometricModal, setShowBiometricModal] = useState<boolean>(false);
-  const [biometricScanning, setBiometricScanning] = useState<boolean>(false);
-  const [biometricSuccess, setBiometricSuccess] = useState<boolean>(false);
   const [biometricType, setBiometricType] = useState<'fingerprint' | 'face'>(() => {
-    return (localStorage.getItem('saata_biometric_type') as 'fingerprint' | 'face') || 'face';
+    return getDeviceBiometricInfo().type;
   });
-  const [biometricStatusMsg, setBiometricStatusMsg] = useState<string>('');
 
-  // Active Punch Biometric/Face ID Verification State
+  // Active Punch Biometric (Face ID for iPhone / Fingerprint for Android)
   const [showFacePunchModal, setShowFacePunchModal] = useState<boolean>(false);
   const [pendingPunchType, setPendingPunchType] = useState<'check_in' | 'check_out'>('check_in');
-  const [facePunchScanning, setFacePunchScanning] = useState<boolean>(false);
-  const [facePunchSuccess, setFacePunchSuccess] = useState<boolean>(false);
-  const [facePunchStatusMsg, setFacePunchStatusMsg] = useState<string>('');
+
+  const isIPhone = isIPhoneDevice();
 
   const handleToggleBiometric = () => {
-    if (!biometricEnabled) {
-      setShowBiometricModal(true);
-      setBiometricScanning(false);
-      setBiometricSuccess(false);
-      setBiometricStatusMsg('Touch fingerprint sensor or scan face to enable biometric login for this mobile app.');
-    } else {
-      localStorage.removeItem(`saata_biometric_enabled_${currentEmployee?.id}`);
-      localStorage.removeItem('saata_biometric_enabled');
-      setBiometricEnabled(false);
-    }
-  };
-
-  const handleStartBiometricEnrollment = (type: 'fingerprint' | 'face') => {
-    setBiometricType(type);
-    setBiometricScanning(true);
-    setBiometricSuccess(false);
-    setBiometricStatusMsg(type === 'fingerprint' ? 'Scanning fingerprint sensor...' : 'Scanning 3D facial contours...');
-
-    setTimeout(() => {
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate([40, 60, 40]);
-      }
-      setBiometricScanning(false);
-      setBiometricSuccess(true);
-      setBiometricStatusMsg(
-        type === 'fingerprint'
-          ? 'Fingerprint enrolled successfully!'
-          : 'Face ID registered successfully!'
-      );
-
-      localStorage.setItem('saata_biometric_type', type);
-      if (currentEmployee) {
-        localStorage.setItem(`saata_biometric_enabled_${currentEmployee.id}`, 'true');
-        localStorage.setItem('saata_biometric_enabled', 'true');
-        localStorage.setItem('saata_biometric_user', currentEmployee.username);
-        localStorage.setItem('saata_biometric_pass', currentEmployee.password || 'password123');
-      }
-      setBiometricEnabled(true);
-    }, 1200);
+    setShowBiometricModal(true);
   };
 
   // Time ticker
@@ -626,15 +586,20 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
   }, [currentTime]);
 
   // Execute final punch to database
-  const executeFinalPunch = (type: 'check_in' | 'check_out', biometricVerified: boolean = false) => {
+  const executeFinalPunch = (
+    type: 'check_in' | 'check_out',
+    biometricVerified: boolean = true,
+    verifiedBioType?: 'face' | 'fingerprint'
+  ) => {
     if (!geofenceResult.activeAuthorizedLocation) {
       hapticError();
       return;
     }
     const locationName = geofenceResult.activeAuthorizedLocation.name;
+    const finalBioType = verifiedBioType || getDeviceBiometricInfo().type;
 
     if (type === 'check_in') {
-      const result = markCheckIn('', { biometricVerified, biometricType });
+      const result = markCheckIn('', { biometricVerified: true, biometricType: finalBioType });
       if (result.success) {
         hapticCheckInSuccess();
         setPunchFeedback({
@@ -642,7 +607,9 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
           type: 'success',
           punchType: 'check_in',
           locationName,
-          message: `Check-IN Successful! Logged at ${locationName}.`,
+          biometricVerified: true,
+          biometricType: finalBioType,
+          message: `Check-IN Successful! Verified via ${finalBioType === 'face' ? 'Apple Face ID' : 'Fingerprint'} at ${locationName}.`,
         });
       } else {
         hapticError();
@@ -654,7 +621,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
         });
       }
     } else {
-      const result = markCheckOut('', { biometricVerified, biometricType });
+      const result = markCheckOut('', { biometricVerified: true, biometricType: finalBioType });
       if (result.success) {
         hapticCheckOutSuccess();
         setPunchFeedback({
@@ -662,7 +629,9 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
           type: 'success',
           punchType: 'check_out',
           locationName,
-          message: `Check-OUT Successful! Verified at ${locationName}.`,
+          biometricVerified: true,
+          biometricType: finalBioType,
+          message: `Check-OUT Successful! Verified via ${finalBioType === 'face' ? 'Apple Face ID' : 'Fingerprint'} at ${locationName}.`,
         });
       } else {
         hapticError();
@@ -676,37 +645,7 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
     }
   };
 
-  // Trigger Biometric Verification Scan for Punch In/Out
-  const triggerBiometricPunchScan = (type: 'check_in' | 'check_out') => {
-    setPendingPunchType(type);
-    setShowFacePunchModal(true);
-    setFacePunchScanning(true);
-    setFacePunchSuccess(false);
-    hapticBiometricScan();
-    setFacePunchStatusMsg(
-      biometricType === 'face'
-        ? `Align face with frame to verify ${type === 'check_in' ? 'Check-In' : 'Check-Out'}...`
-        : `Place finger on sensor to verify ${type === 'check_in' ? 'Check-In' : 'Check-Out'}...`
-    );
-
-    setTimeout(() => {
-      hapticBiometricSuccess();
-      setFacePunchScanning(false);
-      setFacePunchSuccess(true);
-      setFacePunchStatusMsg(
-        biometricType === 'face'
-          ? `Face ID Verified: ${currentEmployee?.name}`
-          : `Fingerprint Match: ${currentEmployee?.name}`
-      );
-
-      setTimeout(() => {
-        setShowFacePunchModal(false);
-        executeFinalPunch(type, true);
-      }, 700);
-    }, 1100);
-  };
-
-  // Handle Punch In Action
+  // Handle Punch In Action (Mandatory phone biometric verification)
   const handlePunchIn = async () => {
     // Immediate tactile click vibration for button press confirmation
     hapticCheckInClick();
@@ -736,14 +675,12 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
       return;
     }
 
-    if (biometricEnabled) {
-      triggerBiometricPunchScan('check_in');
-    } else {
-      executeFinalPunch('check_in', false);
-    }
+    // Biometric is strictly required on mobile check-in
+    setPendingPunchType('check_in');
+    setShowFacePunchModal(true);
   };
 
-  // Handle Punch Out Action
+  // Handle Punch Out Action (Mandatory phone biometric verification)
   const handlePunchOut = () => {
     // Immediate tactile click vibration for button press confirmation
     hapticCheckOutClick();
@@ -759,11 +696,9 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
       return;
     }
 
-    if (biometricEnabled) {
-      triggerBiometricPunchScan('check_out');
-    } else {
-      executeFinalPunch('check_out', false);
-    }
+    // Biometric is strictly required on mobile check-out
+    setPendingPunchType('check_out');
+    setShowFacePunchModal(true);
   };
 
   // Calculate permission hours
@@ -974,6 +909,17 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
                 {unreadNotificationCount}
               </span>
             )}
+          </button>
+
+          {/* Quick Logout Button */}
+          <button
+            type="button"
+            id="mobile-quick-logout-btn"
+            onClick={logout}
+            title={t('header.logout', 'Log Out')}
+            className="p-2 bg-stone-800 hover:bg-rose-950/60 hover:border-rose-700/60 text-stone-300 hover:text-rose-300 rounded-xl transition-all cursor-pointer active:scale-95 border border-stone-700"
+          >
+            <LogOut className="w-4 h-4" />
           </button>
         </div>
       </header>
@@ -2853,80 +2799,93 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
             <div className="bg-white border border-[#ded4c5] rounded-2xl p-4 space-y-3.5 shadow-2xs">
               <div className="flex items-center justify-between border-b border-[#ded4c5] pb-2">
                 <h4 className="text-xs font-extrabold uppercase tracking-wider text-stone-900 flex items-center gap-1.5">
-                  <Fingerprint className="w-4 h-4 text-amber-600" />
-                  <span>Biometric Login Settings</span>
+                  {isIPhone ? (
+                    <ScanFace className="w-4 h-4 text-amber-600" />
+                  ) : (
+                    <Fingerprint className="w-4 h-4 text-emerald-600" />
+                  )}
+                  <span>{isIPhone ? 'Apple Face ID Biometrics' : 'Mobile Fingerprint Biometrics'}</span>
                 </h4>
                 <span
                   className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
-                    biometricEnabled
-                      ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                      : 'bg-stone-100 text-stone-600 border border-stone-200'
+                    isIPhone
+                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                      : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
                   }`}
                 >
-                  {biometricEnabled ? 'Biometrics Active' : 'Disabled'}
+                  {isIPhone ? ' Face ID Active' : 'Touch Sensor Active'}
                 </span>
               </div>
 
               <div className="flex items-center justify-between p-3 bg-[#fbf9f5] border border-[#ded4c5] rounded-xl gap-3">
                 <div className="space-y-0.5 min-w-0">
                   <div className="flex items-center gap-1.5">
-                    <ScanFace className="w-4 h-4 text-amber-700 shrink-0" />
+                    {isIPhone ? (
+                      <ScanFace className="w-4 h-4 text-amber-700 shrink-0" />
+                    ) : (
+                      <Fingerprint className="w-4 h-4 text-emerald-700 shrink-0" />
+                    )}
                     <strong className="text-xs font-extrabold text-stone-900">
-                      Fingerprint / Face ID Login
+                      {isIPhone ? 'Apple TrueDepth Face ID' : 'Biometric Fingerprint Sensor'}
                     </strong>
                   </div>
                   <p className="text-[10.5px] text-stone-600 leading-snug">
-                    Enable biometric authentication for quick 1-touch fingerprint or facial recognition sign-in on this mobile device.
+                    {isIPhone
+                      ? 'Apple facial recognition is enforced on this iPhone for sign-in and attendance check-in/out.'
+                      : 'Biometric fingerprint is enforced on this mobile device for sign-in and attendance check-in/out.'}
                   </p>
                 </div>
 
-                {/* Biometric Toggle Switch */}
                 <button
                   type="button"
-                  id="biometric-login-toggle"
-                  onClick={handleToggleBiometric}
-                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
-                    biometricEnabled ? 'bg-emerald-600' : 'bg-stone-300'
-                  }`}
-                  title={biometricEnabled ? 'Disable Biometric Login' : 'Enable Biometric Login'}
+                  onClick={() => setShowBiometricModal(true)}
+                  className="px-2.5 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-[10px] font-bold shrink-0 cursor-pointer shadow-2xs"
                 >
-                  <span
-                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
-                      biometricEnabled ? 'translate-x-5' : 'translate-x-0'
-                    }`}
-                  />
+                  Test Sensor
                 </button>
               </div>
 
-              {biometricEnabled ? (
-                <div className="p-2.5 bg-emerald-50/80 border border-emerald-200 rounded-xl flex items-center justify-between text-xs">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
-                    <div className="text-[11px] text-emerald-950 font-medium">
-                      Biometric sensor linked to <strong>{currentEmployee.name}</strong>
-                    </div>
-                  </div>
+              {/* Hardware Device Simulator Switcher (iPhone vs Android) */}
+              <div className="p-2.5 bg-stone-100/80 border border-stone-200 rounded-xl space-y-1.5 text-xs">
+                <div className="flex items-center justify-between text-[11px] font-bold text-stone-800">
+                  <span>Phone Biometric Hardware:</span>
+                  <span className="font-mono text-[10px] text-stone-600">
+                    {isIPhone ? 'Apple iPhone Face ID' : 'Android / Other Phone'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => {
-                      setShowBiometricModal(true);
-                      setBiometricScanning(false);
-                      setBiometricSuccess(false);
-                      setBiometricStatusMsg('Touch fingerprint sensor or scan face to test biometric verification.');
+                      setBiometricDeviceOverride('iphone');
+                      setBiometricType('face');
                     }}
-                    className="text-[10px] font-extrabold text-emerald-800 hover:text-emerald-950 underline cursor-pointer shrink-0"
+                    className={`py-1.5 px-2 rounded-lg text-[10px] font-bold border transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                      isIPhone
+                        ? 'bg-amber-100 border-amber-400 text-amber-950 shadow-2xs'
+                        : 'bg-white border-stone-300 text-stone-600 hover:bg-stone-50'
+                    }`}
                   >
-                    Test Sensor
+                    <ScanFace className="w-3.5 h-3.5 text-amber-700" />
+                    iPhone (Face ID)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBiometricDeviceOverride('android');
+                      setBiometricType('fingerprint');
+                    }}
+                    className={`py-1.5 px-2 rounded-lg text-[10px] font-bold border transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                      !isIPhone
+                        ? 'bg-emerald-100 border-emerald-400 text-emerald-950 shadow-2xs'
+                        : 'bg-white border-stone-300 text-stone-600 hover:bg-stone-50'
+                    }`}
+                  >
+                    <Fingerprint className="w-3.5 h-3.5 text-emerald-700" />
+                    Other (Fingerprint)
                   </button>
                 </div>
-              ) : (
-                <div className="p-2.5 bg-amber-50/80 border border-amber-200 rounded-xl flex items-center gap-2 text-xs text-amber-900 font-medium">
-                  <Info className="w-4 h-4 text-amber-700 shrink-0" />
-                  <span className="text-[10.5px]">
-                    Turn on toggle above to pair your phone's fingerprint sensor or Face ID for fast login.
-                  </span>
-                </div>
-              )}
+              </div>
             </div>
 
             {/* Admin Desk Switcher if authorized */}
@@ -3256,223 +3215,52 @@ export const EmployeeMobileApp: React.FC<EmployeeMobileAppProps> = ({ onSwitchTo
         </div>
       )}
 
-      {/* Biometric Enrollment & Sensor Test Modal */}
-      {showBiometricModal && (
-        <div
-          className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
-          onClick={() => setShowBiometricModal(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white border border-[#ded4c5] rounded-3xl p-6 shadow-2xl max-w-sm w-full space-y-4 text-center relative overflow-hidden"
-          >
-            <button
-              type="button"
-              onClick={() => setShowBiometricModal(false)}
-              className="absolute top-3.5 right-3.5 p-1 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            {/* Header Title */}
-            <div className="space-y-1">
-              <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-100 text-amber-900 border border-amber-300 flex items-center justify-center shadow-xs">
-                {biometricType === 'fingerprint' ? (
-                  <Fingerprint className="w-7 h-7" />
-                ) : (
-                  <ScanFace className="w-7 h-7" />
-                )}
-              </div>
-              <h3 className="text-base font-black text-stone-900 tracking-tight pt-1">
-                Biometric Login Authentication
-              </h3>
-              <p className="text-xs text-stone-600 font-medium px-2">
-                {biometricStatusMsg}
-              </p>
-            </div>
-
-            {/* Scanning Ring Container */}
-            <div className="py-4 flex flex-col items-center justify-center">
-              {biometricScanning ? (
-                <div className="relative flex items-center justify-center w-24 h-24">
-                  <div className="absolute inset-0 rounded-full border-4 border-amber-400 border-t-amber-700 animate-spin" />
-                  <div className="w-16 h-16 rounded-full bg-amber-50 flex items-center justify-center text-amber-700 animate-pulse">
-                    {biometricType === 'fingerprint' ? (
-                      <Fingerprint className="w-10 h-10" />
-                    ) : (
-                      <ScanFace className="w-10 h-10" />
-                    )}
-                  </div>
-                </div>
-              ) : biometricSuccess ? (
-                <div className="w-20 h-20 rounded-full bg-emerald-100 text-emerald-700 border-2 border-emerald-300 flex items-center justify-center shadow-md animate-in zoom-in-75 duration-200">
-                  <CheckCircle2 className="w-12 h-12" />
-                </div>
-              ) : (
-                <div className="flex gap-3 justify-center w-full">
-                  <button
-                    type="button"
-                    onClick={() => handleStartBiometricEnrollment('fingerprint')}
-                    className="flex-1 py-3 px-3 bg-[#fbf9f5] hover:bg-amber-100/80 border border-[#ded4c5] hover:border-amber-400 rounded-2xl flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer group shadow-2xs"
-                  >
-                    <Fingerprint className="w-8 h-8 text-amber-700 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-extrabold text-stone-900">Fingerprint</span>
-                    <span className="text-[9px] text-stone-500">Touch Sensor</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleStartBiometricEnrollment('face')}
-                    className="flex-1 py-3 px-3 bg-[#fbf9f5] hover:bg-amber-100/80 border border-[#ded4c5] hover:border-amber-400 rounded-2xl flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer group shadow-2xs"
-                  >
-                    <ScanFace className="w-8 h-8 text-amber-700 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-extrabold text-stone-900">Face ID</span>
-                    <span className="text-[9px] text-stone-500">Facial Scan</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div className="pt-2">
-              {biometricSuccess ? (
-                <button
-                  type="button"
-                  onClick={() => setShowBiometricModal(false)}
-                  className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-extrabold shadow-sm transition-colors cursor-pointer"
-                >
-                  Done & Save Preference
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setShowBiometricModal(false)}
-                  className="w-full py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ======================================================================= */}
+      {/* PUNCH BIOMETRIC VERIFICATION MODAL (APPLE FACE ID / PHONE FINGERPRINT) */}
+      {/* ======================================================================= */}
+      <BiometricAuthModal
+        isOpen={showFacePunchModal}
+        onClose={() => setShowFacePunchModal(false)}
+        onSuccess={(verifiedType) => {
+          setShowFacePunchModal(false);
+          executeFinalPunch(pendingPunchType, true, verifiedType);
+        }}
+        actionType={pendingPunchType}
+        employeeName={currentEmployee?.name || 'Employee'}
+        employeeCode={currentEmployee?.employeeCode}
+        department={currentEmployee?.department}
+        customTitle={
+          isIPhone
+            ? pendingPunchType === 'check_in'
+              ? 'Apple Face ID Check-In'
+              : 'Apple Face ID Check-Out'
+            : pendingPunchType === 'check_in'
+            ? 'Fingerprint Check-In'
+            : 'Fingerprint Check-Out'
+        }
+        customSubtitle={
+          isIPhone
+            ? `Hold your iPhone in front of your face to verify your attendance punch for ${currentEmployee?.name}`
+            : `Place and hold your registered finger on the sensor to verify attendance punch`
+        }
+      />
 
       {/* ======================================================================= */}
-      {/* PUNCH BIOMETRIC / FACE ID VERIFICATION MODAL */}
+      {/* SETTINGS / HARDWARE TEST BIOMETRIC MODAL */}
       {/* ======================================================================= */}
-      {showFacePunchModal && (
-        <div className="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-stone-900 border border-stone-800 rounded-3xl w-full max-w-xs p-5 space-y-4 shadow-2xl text-stone-100 text-center relative overflow-hidden">
-            {/* Top decorative accent */}
-            <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-amber-500 via-amber-300 to-amber-600" />
-
-            <div className="flex items-center justify-between pb-1 border-b border-stone-800">
-              <div className="flex items-center gap-1.5 text-left">
-                {biometricType === 'face' ? (
-                  <ScanFace className="w-4 h-4 text-amber-400" />
-                ) : (
-                  <Fingerprint className="w-4 h-4 text-amber-400" />
-                )}
-                <div>
-                  <h3 className="text-xs font-black uppercase tracking-wider text-amber-400">
-                    {biometricType === 'face' ? 'Face ID Verification' : 'Biometric Sensor'}
-                  </h3>
-                  <p className="text-[10px] text-stone-400">
-                    {pendingPunchType === 'check_in' ? 'Verifying Check-In' : 'Verifying Check-Out'}
-                  </p>
-                </div>
-              </div>
-
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-stone-800 text-stone-300 border border-stone-700">
-                SAATA-BIO
-              </span>
-            </div>
-
-            {/* Viewfinder / Scanner target */}
-            <div className="relative mx-auto w-44 h-44 rounded-2xl bg-stone-950 border-2 border-stone-800 flex items-center justify-center overflow-hidden">
-              {/* Corner targeting brackets */}
-              <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-amber-400 rounded-tl" />
-              <div className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-amber-400 rounded-tr" />
-              <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-amber-400 rounded-bl" />
-              <div className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-amber-400 rounded-br" />
-
-              {/* Scanning laser effect */}
-              {facePunchScanning && (
-                <div className="absolute inset-x-0 h-1 bg-gradient-to-r from-transparent via-amber-400 to-transparent shadow-[0_0_12px_rgba(251,191,36,0.9)] animate-bounce" />
-              )}
-
-              {/* Icon / Viewfinder content */}
-              <div className="flex flex-col items-center justify-center gap-2 z-10">
-                {facePunchSuccess ? (
-                  <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-400 text-emerald-400 flex items-center justify-center animate-in zoom-in-50">
-                    <CheckCircle2 className="w-9 h-9 text-emerald-400" />
-                  </div>
-                ) : biometricType === 'face' ? (
-                  <div className="relative">
-                    <ScanFace
-                      className={`w-16 h-16 text-amber-400/90 transition-all ${
-                        facePunchScanning ? 'animate-pulse scale-105' : ''
-                      }`}
-                    />
-                    <div className="absolute inset-0 rounded-full border border-dashed border-amber-400/40 animate-spin" style={{ animationDuration: '6s' }} />
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <Fingerprint
-                      className={`w-16 h-16 text-amber-400/90 transition-all ${
-                        facePunchScanning ? 'animate-pulse scale-105' : ''
-                      }`}
-                    />
-                  </div>
-                )}
-
-                <span className="text-[11px] font-mono text-stone-300 font-bold">
-                  {currentEmployee?.name}
-                </span>
-              </div>
-
-              {/* Telemetry overlay */}
-              <div className="absolute bottom-1.5 inset-x-2 flex justify-between text-[8px] font-mono text-stone-500">
-                <span>GEO: LOCKED</span>
-                <span>SEC: SHA-256</span>
-              </div>
-            </div>
-
-            {/* Status Message */}
-            <div className="space-y-1">
-              <p className={`text-xs font-bold ${facePunchSuccess ? 'text-emerald-400' : 'text-stone-300'}`}>
-                {facePunchStatusMsg}
-              </p>
-              <p className="text-[10px] text-stone-500">
-                {currentEmployee?.department} • ID: #{currentEmployee?.id.slice(-4).toUpperCase()}
-              </p>
-            </div>
-
-            {/* Actions: Fallback & Cancel */}
-            <div className="pt-2 flex flex-col gap-1.5">
-              {!facePunchSuccess && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowFacePunchModal(false);
-                    executeFinalPunch(pendingPunchType, false);
-                  }}
-                  className="w-full py-2 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
-                >
-                  Bypass Biometrics (Standard Punch)
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setShowFacePunchModal(false)}
-                className="w-full py-1.5 text-stone-400 hover:text-stone-200 text-xs font-medium transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <BiometricAuthModal
+        isOpen={showBiometricModal}
+        onClose={() => setShowBiometricModal(false)}
+        onSuccess={() => {
+          setShowBiometricModal(false);
+          setBiometricEnabled(true);
+        }}
+        actionType="test"
+        employeeName={currentEmployee?.name || 'Employee'}
+        employeeCode={currentEmployee?.employeeCode}
+        department={currentEmployee?.department}
+        customTitle={isIPhone ? 'Apple Face ID Hardware Test' : 'Biometric Sensor Hardware Test'}
+      />
     </div>
   );
 };

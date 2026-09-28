@@ -1,6 +1,6 @@
 {
   "name": "SAA Time and Attendance",
-  "description": "SAA Time and Attendance - Enterprise-grade geofenced mobile attendance system scaled for 200+ concurrent employees with server-side database engine, real-time push updates, multi-office geofencing, hardware device binding, and role-based security.",
+  "description": "SAA Time and Attendance - Enterprise-grade geofenced mobile attendance system scaled for 200+ concurrent employees with server-side database engine, real-time push updates, multi-office geofencing, hardware device binding, role-based security, and native phone biometrics (Apple Face ID for iPhone and Fingerprint sensor for Android).",
   "requestFramePermissions": ["geolocation"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

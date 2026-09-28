@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { LogOut } from 'lucide-react';
 import { AttendanceProvider, useAttendance } from './context/AttendanceContext';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { Sidebar, NavigationTab } from './components/Sidebar';
@@ -18,6 +20,7 @@ const MainAppContent: React.FC = () => {
     isAuthenticated,
     currentEmployee,
     isCurrentHR,
+    logout,
   } = useAttendance();
   const { t, isRTL } = useLanguage();
 
@@ -98,29 +101,61 @@ const MainAppContent: React.FC = () => {
                 {t(portalTitleKey, portalTitleFallback)}
               </span>
             </div>
+
+            {currentEmployee && (
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="font-bold text-stone-800">{currentEmployee.name}</span>
+                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md uppercase tracking-wider bg-stone-100 text-stone-600 border border-stone-200">
+                    {currentEmployee.role}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  id="desktop-header-logout-btn"
+                  onClick={logout}
+                  className="px-3 py-1.5 bg-stone-100 hover:bg-rose-50 border border-stone-200 hover:border-rose-200 text-stone-700 hover:text-rose-700 text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors active:scale-95 shadow-2xs"
+                  title={t('header.logout', 'Log Out')}
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>{t('header.logout', 'Log Out')}</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* View Switcher */}
           <main className="flex-1 min-h-0 p-3.5 sm:p-4 lg:p-5 overflow-y-auto">
-            {currentTab === 'dashboard' && (
-              <Dashboard
-                onNavigateToMobile={() => handleSetCurrentTab('attendance')}
-                onNavigateToRequests={() => handleSetCurrentTab('requests')}
-                onNavigateToEmployees={() => handleSetCurrentTab('employees')}
-              />
-            )}
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentTab}
+                initial={{ opacity: 0, y: 8, scale: 0.995 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.995 }}
+                transition={{ duration: 0.18, ease: 'easeOut' }}
+                className="h-full"
+              >
+                {currentTab === 'dashboard' && (
+                  <Dashboard
+                    onNavigateToMobile={() => handleSetCurrentTab('attendance')}
+                    onNavigateToRequests={() => handleSetCurrentTab('requests')}
+                    onNavigateToEmployees={() => handleSetCurrentTab('employees')}
+                  />
+                )}
 
-            {(currentTab === 'attendance' || currentTab === 'mobile_terminal') && (
-              <AttendanceView />
-            )}
+                {(currentTab === 'attendance' || currentTab === 'mobile_terminal') && (
+                  <AttendanceView />
+                )}
 
-            {currentTab === 'requests' && <RequestsManager />}
+                {currentTab === 'requests' && <RequestsManager />}
 
-            {currentTab === 'employees' && <EmployeeDirectory />}
+                {currentTab === 'employees' && <EmployeeDirectory />}
 
-            {(currentTab === 'definitions' || currentTab === 'locations') && (
-              <DefinitionsView initialTab={currentTab === 'locations' ? 'geofences' : undefined} />
-            )}
+                {(currentTab === 'definitions' || currentTab === 'locations') && (
+                  <DefinitionsView initialTab={currentTab === 'locations' ? 'geofences' : undefined} />
+                )}
+              </motion.div>
+            </AnimatePresence>
           </main>
         </div>
       </div>

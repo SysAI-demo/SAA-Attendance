@@ -17,7 +17,7 @@ const translations: Record<Language, Record<string, string>> = {
     'nav.attendance': 'Attendance Logs',
     'nav.requests': 'Leave & Requests',
     'nav.employees': 'Employee Directory',
-    'nav.definitions': 'Settings & Definitions',
+    'nav.definitions': 'Definitions',
     'nav.locations': 'Locations & Geofences',
     'nav.mobile_terminal': 'Mobile Kiosk',
 
@@ -89,7 +89,7 @@ const translations: Record<Language, Record<string, string>> = {
     'nav.attendance': 'سجلات الحضور',
     'nav.requests': 'الإجازات والطلبات',
     'nav.employees': 'دليل الموظفين',
-    'nav.definitions': 'الإعدادات والتعريفات',
+    'nav.definitions': 'التعريفات',
     'nav.locations': 'مواقع العمل والتسيير الجغرافي',
     'nav.mobile_terminal': 'جهاز الحضور المحمول',
 

@@ -1,9 +1,172 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Top level collections for multi-employee enterprise system
+    // 1. Global Default Deny Catch-All
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
+    }
+
+    // 2. Core Security Helpers & ABAC Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && request.auth.token.email == 'Danish199506@gmail.com';
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation Blueprint for Employee
+    function isValidEmployee(data) {
+      return data.keys().hasAll(['id', 'name', 'email', 'employeeCode', 'role']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 120 &&
+        data.email is string && data.email.size() <= 150 &&
+        data.employeeCode is string && data.employeeCode.size() <= 30 &&
+        data.role in ['employee', 'manager', 'hr', 'admin'] &&
+        (!('isActive' in data) || data.isActive is bool) &&
+        (!('canLogin' in data) || data.canLogin is bool) &&
+        (!('phone' in data) || (data.phone is string && data.phone.size() <= 40)) &&
+        (!('department' in data) || (data.department is string && data.department.size() <= 80));
+    }
+
+    // Validation Blueprint for Office Location
+    function isValidOfficeLocation(data) {
+      return data.keys().hasAll(['id', 'name', 'latitude', 'longitude', 'radiusMeters', 'isActive']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.name is string && data.name.size() > 0 && data.name.size() <= 150 &&
+        data.latitude is number &&
+        data.longitude is number &&
+        data.radiusMeters is number && data.radiusMeters >= 5 && data.radiusMeters <= 50000 &&
+        data.isActive is bool;
+    }
+
+    // Validation Blueprint for Attendance Record
+    function isValidAttendanceRecord(data) {
+      return data.keys().hasAll(['id', 'employeeId', 'date', 'checkInTime', 'status']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.employeeId is string && data.employeeId.size() <= 128 &&
+        data.date is string && data.date.size() <= 20 &&
+        data.checkInTime is string && data.checkInTime.size() <= 20 &&
+        data.status in ['active', 'on_time', 'late', 'half_day', 'completed'] &&
+        (!('checkOutTime' in data) || (data.checkOutTime is string && data.checkOutTime.size() <= 20)) &&
+        (!('distanceToOfficeMeters' in data) || data.distanceToOfficeMeters is number);
+    }
+
+    // Validation Blueprint for Leave Request
+    function isValidLeaveRequest(data) {
+      return data.keys().hasAll(['id', 'employeeId', 'leaveType', 'startDate', 'endDate', 'status']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.employeeId is string && data.employeeId.size() <= 128 &&
+        data.leaveType is string && data.leaveType.size() <= 50 &&
+        data.startDate is string && data.startDate.size() <= 20 &&
+        data.endDate is string && data.endDate.size() <= 20 &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        (!('reason' in data) || (data.reason is string && data.reason.size() <= 1000));
+    }
+
+    // Validation Blueprint for Permission Request
+    function isValidPermissionRequest(data) {
+      return data.keys().hasAll(['id', 'employeeId', 'date', 'startTime', 'endTime', 'status']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.employeeId is string && data.employeeId.size() <= 128 &&
+        data.date is string && data.date.size() <= 20 &&
+        data.startTime is string && data.startTime.size() <= 20 &&
+        data.endTime is string && data.endTime.size() <= 20 &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        (!('reason' in data) || (data.reason is string && data.reason.size() <= 1000));
+    }
+
+    // Validation Blueprint for Notification
+    function isValidNotification(data) {
+      return data.keys().hasAll(['id', 'employeeId', 'title', 'message', 'isRead', 'createdAt']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.employeeId is string && data.employeeId.size() <= 128 &&
+        data.title is string && data.title.size() <= 150 &&
+        data.message is string && data.message.size() <= 500 &&
+        data.isRead is bool &&
+        data.createdAt is string && data.createdAt.size() <= 50;
+    }
+
+    // Validation Blueprint for Activity Log
+    function isValidActivityLog(data) {
+      return data.keys().hasAll(['id', 'employeeId', 'action', 'timestamp']) &&
+        data.id is string && data.id.size() <= 128 &&
+        data.employeeId is string && data.employeeId.size() <= 128 &&
+        data.action is string && data.action.size() <= 100 &&
+        data.timestamp is string && data.timestamp.size() <= 50;
+    }
+
+    // 3. Collection Rules
+
+    // Employees Collection
+    match /employees/{employeeId} {
+      allow get, list: if isSignedIn();
+      allow create, update: if (isSuperAdmin() || isSignedIn()) && isValidId(employeeId) && isValidEmployee(incoming());
+      allow delete: if isSuperAdmin();
+    }
+
+    // Office Locations Collection
+    match /office_locations/{locationId} {
+      allow get, list: if isSignedIn();
+      allow create, update: if (isSuperAdmin() || isSignedIn()) && isValidId(locationId) && isValidOfficeLocation(incoming());
+      allow delete: if isSuperAdmin();
+    }
+
+    // Attendance Records Collection
+    match /attendance_records/{recordId} {
+      allow get, list: if isSignedIn();
+      allow create: if (isSuperAdmin() || isSignedIn()) && isValidId(recordId) && isValidAttendanceRecord(incoming());
+      allow update: if (isSuperAdmin() || isSignedIn()) && isValidId(recordId) && isValidAttendanceRecord(incoming());
+      allow delete: if isSuperAdmin();
+    }
+
+    // Leave Requests Collection
+    match /leave_requests/{leaveId} {
+      allow get, list: if isSignedIn();
+      allow create: if (isSuperAdmin() || isSignedIn()) && isValidId(leaveId) && isValidLeaveRequest(incoming());
+      allow update: if (isSuperAdmin() || isSignedIn()) && isValidId(leaveId) && isValidLeaveRequest(incoming());
+      allow delete: if isSuperAdmin();
+    }
+
+    // Permission Requests Collection
+    match /permission_requests/{permissionId} {
+      allow get, list: if isSignedIn();
+      allow create: if (isSuperAdmin() || isSignedIn()) && isValidId(permissionId) && isValidPermissionRequest(incoming());
+      allow update: if (isSuperAdmin() || isSignedIn()) && isValidId(permissionId) && isValidPermissionRequest(incoming());
+      allow delete: if isSuperAdmin();
+    }
+
+    // Notifications Collection
+    match /notifications/{notificationId} {
+      allow get, list: if isSignedIn();
+      allow create, update: if (isSuperAdmin() || isSignedIn()) && isValidId(notificationId) && isValidNotification(incoming());
+      allow delete: if isSuperAdmin();
+    }
+
+    // User Activity Logs Collection
+    match /user_activity_logs/{logId} {
+      allow get, list: if isSignedIn();
+      allow create: if (isSuperAdmin() || isSignedIn()) && isValidId(logId) && isValidActivityLog(incoming());
+      allow update, delete: if isSuperAdmin();
+    }
+
+    // System Definitions Collection
+    match /system_definitions/{definitionId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSuperAdmin() || isSignedIn();
     }
   }
 }
+

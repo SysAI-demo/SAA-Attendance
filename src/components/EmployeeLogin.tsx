@@ -19,9 +19,12 @@ import {
   Fingerprint,
   ScanFace,
   X,
+  Sparkles,
 } from 'lucide-react';
 import { EmployeeDeviceBinding } from '../types';
 import { useDeviceType } from '../hooks/useDeviceType';
+import { BiometricAuthModal } from './BiometricAuthModal';
+import { getDeviceBiometricInfo, isIPhoneDevice } from '../utils/biometricUtils';
 
 interface EmployeeLoginProps {
   onLoginSuccess?: () => void;
@@ -57,76 +60,53 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
 
   // Biometric Auth Modal State
   const [showBiometricModal, setShowBiometricModal] = useState(false);
-  const [biometricScanning, setBiometricScanning] = useState(false);
-  const [biometricSuccess, setBiometricSuccess] = useState(false);
-  const [biometricStatusMsg, setBiometricStatusMsg] = useState('');
-  const [selectedBiometricUsername, setSelectedBiometricUsername] = useState<string>('');
+  const [pendingLoginEmp, setPendingLoginEmp] = useState<{
+    id: string;
+    username: string;
+    password: string;
+    name: string;
+    employeeCode: string;
+    department?: string;
+  } | null>(null);
+  const [selectedBiometricUsername, setSelectedBiometricUsername] = useState<string>(() => {
+    return localStorage.getItem('saata_biometric_user') || 'danish';
+  });
 
+  const bioInfo = getDeviceBiometricInfo();
+  const isIPhone = bioInfo.isIPhone;
+
+  // Trigger One-Touch Biometric Sign-In on mobile
   const handleBiometricLoginTrigger = () => {
     setError(null);
     setDeviceMismatchInfo(null);
+
+    const savedUser = localStorage.getItem('saata_biometric_user') || username.trim() || selectedBiometricUsername || employees[0]?.username || 'admin';
+    const cleanSaved = savedUser.toLowerCase();
+    const targetEmp = employees.find((e) =>
+      e.username?.toLowerCase() === cleanSaved ||
+      e.email?.toLowerCase() === cleanSaved ||
+      e.employeeCode?.toLowerCase() === cleanSaved ||
+      (cleanSaved === 'danish' && e.name.toLowerCase().includes('danish')) ||
+      (cleanSaved === 'admin' && e.role === 'admin')
+    ) || employees[0];
+
+    if (!targetEmp) {
+      setError('No employee account available for biometric login.');
+      return;
+    }
+
+    setPendingLoginEmp({
+      id: targetEmp.id,
+      username: targetEmp.username || targetEmp.email || 'user',
+      password: targetEmp.password || 'password123',
+      name: targetEmp.name,
+      employeeCode: targetEmp.employeeCode || targetEmp.id,
+      department: targetEmp.department,
+    });
     setShowBiometricModal(true);
-    setBiometricScanning(false);
-    setBiometricSuccess(false);
-    const savedUser = localStorage.getItem('saata_biometric_user') || username.trim() || employees[0]?.username || 'danish';
-    setSelectedBiometricUsername(savedUser);
-    setBiometricStatusMsg('Touch fingerprint sensor or scan face to authenticate with SAATA Mobile.');
   };
 
-  const handleExecuteBiometricScan = (type: 'fingerprint' | 'face') => {
-    setBiometricScanning(true);
-    setBiometricSuccess(false);
-    setBiometricStatusMsg(type === 'fingerprint' ? 'Scanning fingerprint sensor...' : 'Authenticating 3D Face ID geometry...');
-
-    setTimeout(() => {
-      let targetUser = selectedBiometricUsername || localStorage.getItem('saata_biometric_user') || username.trim();
-      let matchedEmp = employees.find((e) => e.username?.toLowerCase() === targetUser.toLowerCase());
-      
-      if (!matchedEmp && employees.length > 0) {
-        matchedEmp = employees[0];
-        targetUser = matchedEmp.username || 'danish';
-      }
-
-      if (!targetUser || !matchedEmp) {
-        setBiometricScanning(false);
-        setShowBiometricModal(false);
-        setError('No employee account available for biometric login.');
-        return;
-      }
-
-      const targetPass = matchedEmp.password || localStorage.getItem('saata_biometric_pass') || 'password123';
-      const res = login(targetUser, targetPass, { forcePlatform: 'mobile' });
-
-      if (res.success) {
-        if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          navigator.vibrate([40, 60, 40]);
-        }
-        localStorage.setItem(`saata_biometric_enabled_${matchedEmp.id}`, 'true');
-        localStorage.setItem('saata_biometric_enabled', 'true');
-        localStorage.setItem('saata_biometric_user', targetUser);
-        localStorage.setItem('saata_biometric_pass', targetPass);
-
-        setBiometricScanning(false);
-        setBiometricSuccess(true);
-        setBiometricStatusMsg(`Face ID Verified! Welcome, ${matchedEmp.name}.`);
-        setTimeout(() => {
-          setShowBiometricModal(false);
-          if (onLoginSuccess) onLoginSuccess();
-        }, 600);
-      } else {
-        setBiometricScanning(false);
-        setShowBiometricModal(false);
-        setError(res.message || 'Biometric authentication failed or device mismatch.');
-        if (res.isDeviceMismatch) {
-          setDeviceMismatchInfo({
-            registered: res.registeredDevice,
-            current: res.currentDevice,
-          });
-        }
-      }
-    }, 1200);
-  };
-
+  // Form submit: on mobile, biometric verification is mandatory before session access
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim() || !password.trim()) {
@@ -137,10 +117,43 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
 
     setError(null);
     setDeviceMismatchInfo(null);
-    setLoading(true);
 
+    // If mobile platform, authenticate credentials then require hardware biometric verification
+    if (selectedPlatform === 'mobile') {
+      const cleanU = username.trim().toLowerCase();
+      const matchedEmp = employees.find((e) =>
+        e.username?.toLowerCase() === cleanU ||
+        e.email?.toLowerCase() === cleanU ||
+        e.employeeCode?.toLowerCase() === cleanU ||
+        (cleanU === 'danish' && e.name.toLowerCase().includes('danish')) ||
+        (cleanU === 'admin' && e.role === 'admin')
+      );
+      if (!matchedEmp) {
+        setError('Invalid username or account not found.');
+        return;
+      }
+      if (matchedEmp.password && matchedEmp.password !== password) {
+        setError('Incorrect password. Please verify your credentials.');
+        return;
+      }
+
+      // Valid credentials: trigger mandatory phone biometric verification (Face ID for iPhone, Fingerprint for others)
+      setPendingLoginEmp({
+        id: matchedEmp.id,
+        username: username.trim(),
+        password: password,
+        name: matchedEmp.name,
+        employeeCode: matchedEmp.employeeCode || matchedEmp.id,
+        department: matchedEmp.department,
+      });
+      setShowBiometricModal(true);
+      return;
+    }
+
+    // Desktop platform: standard direct password sign-in
+    setLoading(true);
     setTimeout(() => {
-      const res = login(username.trim(), password, { forcePlatform: selectedPlatform });
+      const res = login(username.trim(), password, { forcePlatform: 'desktop' });
       setLoading(false);
       if (res.success) {
         if (onLoginSuccess) onLoginSuccess();
@@ -156,23 +169,52 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
     }, 280);
   };
 
+  // Callback when biometric verification succeeds in modal
+  const handleBiometricSuccess = (verifiedBioType: 'face' | 'fingerprint') => {
+    if (!pendingLoginEmp) return;
+
+    const res = login(pendingLoginEmp.username, pendingLoginEmp.password, { forcePlatform: 'mobile' });
+    if (res.success) {
+      const loggedEmp = employees.find((e) => e.username === pendingLoginEmp.username);
+      if (loggedEmp) {
+        localStorage.setItem(`saata_biometric_enabled_${loggedEmp.id}`, 'true');
+      }
+      localStorage.setItem('saata_biometric_enabled', 'true');
+      localStorage.setItem('saata_biometric_user', pendingLoginEmp.username);
+      localStorage.setItem('saata_biometric_pass', pendingLoginEmp.password);
+      localStorage.setItem('saata_biometric_type', verifiedBioType);
+
+      setShowBiometricModal(false);
+      if (onLoginSuccess) onLoginSuccess();
+    } else {
+      setShowBiometricModal(false);
+      setError(res.message || 'Biometric authentication failed or device mismatch.');
+      if (res.isDeviceMismatch) {
+        setDeviceMismatchInfo({
+          registered: res.registeredDevice,
+          current: res.currentDevice,
+        });
+      }
+    }
+  };
+
   return (
-    <div className="min-h-screen w-full relative overflow-hidden flex items-center justify-center font-sans select-none px-4 py-8">
-      {/* Heritage Desert Oasis Line Art Background */}
-      <DesertOasisBackground />
+    <div className="min-h-screen w-full relative overflow-hidden flex items-center justify-center font-sans select-none px-4 py-8 bg-[#07090E]">
+      {/* Heritage Desert Oasis Line Art Background in Dark Theme */}
+      <DesertOasisBackground theme="dark" />
 
       {/* Main Glassmorphic Login Card */}
-      <div className={`relative z-10 w-full max-w-[385px] sm:max-w-[430px] bg-[#FAF6EE]/95 border border-[#CDBE9F] rounded-3xl shadow-2xl shadow-[#785E2D]/15 p-6 sm:p-8 backdrop-blur-md transition-all flex flex-col items-center ${isRTL ? 'font-arabic' : ''}`}>
+      <div className={`relative z-10 w-full max-w-[385px] sm:max-w-[430px] bg-[#121622]/92 border border-[#C5A265]/35 rounded-3xl shadow-2xl shadow-black/80 p-6 sm:p-8 backdrop-blur-xl transition-all flex flex-col items-center ${isRTL ? 'font-arabic' : ''}`}>
         
         {/* Language Switcher bar at top of card */}
         <div className="w-full mb-5">
-          <LanguageSwitcher variant="login" />
+          <LanguageSwitcher variant="login" theme="dark" />
         </div>
 
         {/* Brand Logo & Header */}
         <div className="mb-4 flex flex-col items-center text-center">
           {/* Logo in top container */}
-          <div className="p-3.5 rounded-2xl bg-white/90 border border-[#D5C7AA] shadow-sm flex items-center justify-center mb-3">
+          <div className="p-3.5 rounded-2xl bg-[#1A202F]/90 border border-[#C5A265]/30 shadow-inner flex items-center justify-center mb-3">
             <img
               src="/logo.png"
               alt="SAA Time and Attendance Logo"
@@ -180,71 +222,38 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
             />
           </div>
 
-          <div className="space-y-1">
-            <h1 className="text-xl font-black tracking-tight text-stone-900">
+          <div>
+            <h1 className="text-xl font-black tracking-tight text-stone-100">
               SAA Time & Attendance
             </h1>
-            <p className="text-[11px] font-bold text-[#8A6E3B] uppercase tracking-wider flex items-center justify-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Unified Enterprise Access</span>
-            </p>
           </div>
-        </div>
-
-        {/* Platform Indicator Banner */}
-        <div className="w-full mb-4 px-3.5 py-2.5 bg-white/80 border border-[#D9CEBA] rounded-2xl flex items-center justify-between shadow-2xs">
-          {selectedPlatform === 'desktop' ? (
-            <div className="flex items-center gap-2 text-xs">
-              <div className="w-7 h-7 rounded-xl bg-stone-900 text-stone-50 flex items-center justify-center shrink-0">
-                <Laptop className="w-3.5 h-3.5 text-stone-200" />
-              </div>
-              <div className="text-stone-700 leading-tight">
-                <div className="font-extrabold text-stone-900">Desktop Portal</div>
-                <div className="text-[10px] text-stone-500">Full workstation desk access</div>
-              </div>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2 text-xs">
-              <div className="w-7 h-7 rounded-xl bg-stone-900 text-amber-400 flex items-center justify-center shrink-0">
-                <Smartphone className="w-3.5 h-3.5" />
-              </div>
-              <div className="text-stone-700 leading-tight">
-                <div className="font-extrabold text-stone-900">Mobile Application</div>
-                <div className="text-[10px] text-stone-500">1-Device hardware binding active</div>
-              </div>
-            </div>
-          )}
-
-          <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full uppercase tracking-wider bg-stone-100 text-stone-600 border border-stone-200">
-            {selectedPlatform === 'desktop' ? 'Desktop' : 'Mobile'}
-          </span>
         </div>
 
         {/* 1-Device Mobile Policy Security Alert */}
         {deviceMismatchInfo && (
-          <div className="w-full mb-4 p-3.5 bg-rose-50 border border-rose-300 rounded-2xl text-stone-800 text-xs shadow-xs space-y-2.5 animate-in fade-in duration-200">
-            <div className="flex items-center gap-2 text-rose-900 font-extrabold text-xs">
-              <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+          <div className="w-full mb-4 p-3.5 bg-rose-950/70 border border-rose-800 rounded-2xl text-rose-100 text-xs shadow-xs space-y-2.5 animate-in fade-in duration-200">
+            <div className="flex items-center gap-2 text-rose-300 font-extrabold text-xs">
+              <ShieldAlert className="w-4 h-4 text-rose-400 shrink-0" />
               <span>1-Mobile-Device Policy Enforced</span>
             </div>
-            <p className="text-[11px] text-rose-800 leading-relaxed font-medium">
+            <p className="text-[11px] text-rose-200 leading-relaxed font-medium">
               Mobile application access is strictly restricted to <strong>1 authorized mobile phone</strong>. This employee profile is already mapped to another phone.
             </p>
-            <div className="bg-white/90 border border-rose-200 rounded-xl p-2.5 space-y-1.5 text-[10px]">
-              <div className="flex items-center justify-between text-stone-600">
-                <span className="font-semibold text-rose-900">Registered Phone:</span>
-                <span className="font-mono text-stone-800 font-bold truncate max-w-[170px]">
+            <div className="bg-rose-900/40 border border-rose-700/50 rounded-xl p-2.5 space-y-1.5 text-[10px]">
+              <div className="flex items-center justify-between text-rose-200">
+                <span className="font-semibold text-rose-300">Registered Phone:</span>
+                <span className="font-mono text-white font-bold truncate max-w-[170px]">
                   {deviceMismatchInfo.registered?.deviceName || 'Authorized Mobile Device'}
                 </span>
               </div>
-              <div className="flex items-center justify-between text-stone-500">
+              <div className="flex items-center justify-between text-rose-300/80">
                 <span>Attempted Phone:</span>
-                <span className="font-mono truncate max-w-[170px] text-rose-700 font-bold">
+                <span className="font-mono truncate max-w-[170px] text-rose-300 font-bold">
                   {currentDevice?.deviceName || 'This Browser'}
                 </span>
               </div>
             </div>
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-2 text-[10px] text-amber-900 font-medium space-y-1">
+            <div className="bg-[#1A1814] border border-amber-700/50 rounded-xl p-2 text-[10px] text-amber-300 font-medium space-y-1">
               <p>
                 ✦ <strong>Need to use desktop?</strong> Switch to the <em>Desktop Desk</em> tab above to sign in without restriction.
               </p>
@@ -257,13 +266,13 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
 
         {/* General Error Notification */}
         {error && !deviceMismatchInfo && (
-          <div className="w-full mb-4 p-3 bg-rose-50/95 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-start gap-2.5 shadow-xs animate-in fade-in duration-200">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+          <div className="w-full mb-4 p-3 bg-rose-950/80 border border-rose-800/90 rounded-xl text-rose-200 text-xs flex items-start gap-2.5 shadow-xs animate-in fade-in duration-200">
+            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
             <div className="flex-1 text-[12px] font-medium leading-snug">{error}</div>
             <button
               type="button"
               onClick={() => setError(null)}
-              className="text-rose-400 hover:text-rose-700 font-bold text-xs cursor-pointer"
+              className="text-rose-400 hover:text-rose-200 font-bold text-xs cursor-pointer"
             >
               ✕
             </button>
@@ -272,16 +281,16 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
 
         {/* Standard Corporate Login Form */}
         <form onSubmit={handleSubmit} className="w-full space-y-3.5">
-          {/* USERNAME / EMAIL / EMPLOYEE CODE Field */}
+          {/* USERNAME Field */}
           <div className="space-y-1.5">
             <label
               htmlFor="login-username"
-              className="text-[11px] font-extrabold text-stone-700 uppercase tracking-wider block"
+              className="text-[11px] font-extrabold text-stone-300 uppercase tracking-wider block"
             >
-              Username / Employee Code / Email
+              Username
             </label>
             <div className="relative w-full">
-              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A6E3B]">
+              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-amber-400">
                 <User className="w-4 h-4" />
               </div>
               <input
@@ -294,9 +303,9 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
                   if (error) setError(null);
                   if (deviceMismatchInfo) setDeviceMismatchInfo(null);
                 }}
-                placeholder="e.g. admin or EMP-001"
+                placeholder="Enter username"
                 autoComplete="off"
-                className="w-full bg-white/95 border border-[#CDBE9F] focus:border-stone-900 focus:ring-1 focus:ring-stone-900 rounded-xl text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 font-medium pl-10 pr-3 py-2.5 focus:outline-hidden transition-all shadow-2xs"
+                className="w-full bg-[#171D2B]/90 border border-[#2B3549] focus:border-amber-400 focus:ring-1 focus:ring-amber-400/30 rounded-xl text-xs sm:text-sm text-stone-100 placeholder:text-stone-500 font-medium pl-10 pr-3 py-2.5 focus:outline-hidden transition-all shadow-inner"
               />
             </div>
           </div>
@@ -305,12 +314,12 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
           <div className="space-y-1.5">
             <label
               htmlFor="login-password"
-              className="text-[11px] font-extrabold text-stone-700 uppercase tracking-wider block"
+              className="text-[11px] font-extrabold text-stone-300 uppercase tracking-wider block"
             >
               Password
             </label>
             <div className="relative w-full">
-              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8A6E3B]">
+              <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-amber-400">
                 <Lock className="w-4 h-4" />
               </div>
               <input
@@ -325,12 +334,12 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
                 }}
                 placeholder="••••••••"
                 autoComplete="off"
-                className="w-full bg-white/95 border border-[#CDBE9F] focus:border-stone-900 focus:ring-1 focus:ring-stone-900 rounded-xl text-xs sm:text-sm text-stone-900 placeholder:text-stone-400 font-medium pl-10 pr-10 py-2.5 focus:outline-hidden transition-all shadow-2xs"
+                className="w-full bg-[#171D2B]/90 border border-[#2B3549] focus:border-amber-400 focus:ring-1 focus:ring-amber-400/30 rounded-xl text-xs sm:text-sm text-stone-100 placeholder:text-stone-500 font-medium pl-10 pr-10 py-2.5 focus:outline-hidden transition-all shadow-inner"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-700 cursor-pointer p-1"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-amber-300 cursor-pointer p-1 transition-colors"
                 title={showPassword ? 'Hide password' : 'Show password'}
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -338,171 +347,105 @@ export const EmployeeLogin: React.FC<EmployeeLoginProps> = ({
             </div>
           </div>
 
-          {/* LOGIN SUBMIT Button */}
+          {/* LOGIN SUBMIT & BIOMETRIC BUTTONS */}
           <div className="pt-2 space-y-2">
-            <button
-              type="submit"
-              id="login-submit-btn"
-              disabled={loading}
-              className="w-full bg-stone-900 hover:bg-stone-800 active:bg-stone-950 text-stone-50 py-3 rounded-xl text-xs sm:text-sm font-extrabold tracking-wider uppercase shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60 active:scale-98"
-            >
-              {loading ? (
-                <div className="flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-amber-300 border-t-transparent rounded-full animate-spin" />
-                  <span>Verifying Credentials...</span>
-                </div>
-              ) : (
-                <>
-                  <span>{selectedPlatform === 'desktop' ? 'Sign In to Workspace' : 'Sign In to Mobile App'}</span>
-                  <ArrowRight className="w-4 h-4 text-amber-300" />
-                </>
-              )}
-            </button>
-
-            {/* Mobile Biometric Login Shortcut */}
             {selectedPlatform === 'mobile' && (
+              /* Dedicated Mobile Hardware Biometric Sign-In Button */
               <button
                 type="button"
                 id="login-biometric-btn"
                 onClick={handleBiometricLoginTrigger}
-                className="w-full bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-stone-950 py-2.5 rounded-xl text-xs font-black tracking-wide shadow-sm transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98 border border-amber-400"
+                className={`w-full py-3 rounded-xl text-xs sm:text-sm font-black tracking-wide shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-98 border ${
+                  isIPhone
+                    ? 'bg-gradient-to-r from-amber-400 via-amber-500 to-amber-600 hover:from-amber-500 hover:to-amber-700 text-stone-950 border-amber-300 shadow-amber-950/30'
+                    : 'bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-700 hover:from-emerald-600 hover:to-teal-800 text-white border-emerald-400 shadow-emerald-950/30'
+                }`}
               >
-                <Fingerprint className="w-4 h-4 text-stone-950" />
-                <span>Login with Fingerprint / Face ID</span>
+                {isIPhone ? <ScanFace className="w-4 h-4" /> : <Fingerprint className="w-4 h-4" />}
+                <span>
+                  {isIPhone ? 'One-Touch Sign In with Face ID' : 'One-Touch Sign In with Fingerprint'}
+                </span>
               </button>
             )}
+
+            <button
+              type="submit"
+              id="login-submit-btn"
+              disabled={loading}
+              className="w-full bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 active:from-amber-700 active:to-amber-900 text-stone-950 py-2.5 rounded-xl text-xs sm:text-sm font-black tracking-wider uppercase shadow-lg shadow-amber-950/40 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-60 active:scale-98"
+            >
+              {loading ? (
+                <div className="flex items-center gap-2">
+                  <span className="w-4 h-4 border-2 border-stone-950 border-t-transparent rounded-full animate-spin" />
+                  <span>Verifying Credentials...</span>
+                </div>
+              ) : (
+                <>
+                  <span>
+                    {selectedPlatform === 'desktop'
+                      ? 'Sign In to Workspace'
+                      : isIPhone
+                      ? 'Verify Credentials & Scan Face ID'
+                      : 'Verify Credentials & Scan Fingerprint'}
+                  </span>
+                  <ArrowRight className="w-4 h-4 text-stone-950" />
+                </>
+              )}
+            </button>
           </div>
         </form>
 
-        {/* Current Detected Hardware Tag */}
-        <div className="w-full mt-3 px-3 py-2 bg-stone-100/80 border border-[#D9CEBA] rounded-xl flex items-center justify-between text-[10px] text-stone-600">
+        {/* Current Detected Hardware Tag & Biometric Notice */}
+        <div className="w-full mt-3 px-3 py-2.5 bg-[#161C2A]/90 border border-[#2B3549] rounded-xl flex items-center justify-between text-[10px] text-stone-300">
           <div className="flex items-center gap-1.5 truncate">
             {selectedPlatform === 'mobile' ? (
-              <Smartphone className="w-3.5 h-3.5 text-stone-500 shrink-0" />
+              isIPhone ? (
+                <ScanFace className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              ) : (
+                <Fingerprint className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              )
             ) : (
-              <Laptop className="w-3.5 h-3.5 text-stone-500 shrink-0" />
+              <Laptop className="w-3.5 h-3.5 text-amber-400 shrink-0" />
             )}
-            <span className="truncate">Client: <strong>{currentDevice.deviceName}</strong></span>
+            <span className="truncate">
+              {selectedPlatform === 'mobile'
+                ? isIPhone
+                  ? 'Apple iPhone: Face ID Required'
+                  : 'Mobile Phone: Fingerprint Required'
+                : `Client: ${currentDevice.deviceName}`}
+            </span>
           </div>
-          <span className="font-mono text-[9px] bg-stone-200 text-stone-700 px-1.5 py-0.5 rounded font-bold shrink-0">
-            {selectedPlatform === 'mobile' ? '1-Phone Policy' : 'Multi-Terminal'}
+          <span
+            className={`font-mono text-[9px] px-2 py-0.5 rounded font-bold shrink-0 ${
+              selectedPlatform === 'mobile'
+                ? isIPhone
+                  ? 'bg-amber-950/80 text-amber-300 border border-amber-700/80'
+                  : 'bg-emerald-950/80 text-emerald-300 border border-emerald-700/80'
+                : 'bg-[#242D3D] text-amber-300 border border-amber-500/30'
+            }`}
+          >
+            {selectedPlatform === 'mobile' ? (isIPhone ? ' Face ID' : 'Touch Sensor') : 'Multi-Terminal'}
           </span>
         </div>
 
       </div>
 
-      {/* Biometric Verification Modal */}
-      {showBiometricModal && (
-        <div
-          className="fixed inset-0 z-50 bg-stone-900/75 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200"
-          onClick={() => setShowBiometricModal(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-[#FAF6EE] border border-[#CDBE9F] rounded-3xl p-6 shadow-2xl max-w-xs sm:max-w-sm w-full space-y-4 text-center relative overflow-hidden"
-          >
-            <button
-              type="button"
-              onClick={() => setShowBiometricModal(false)}
-              className="absolute top-3.5 right-3.5 p-1 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-200 transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            {/* Header Title */}
-            <div className="space-y-1 pt-1">
-              <div className="w-14 h-14 mx-auto rounded-full bg-amber-100 text-amber-900 border-2 border-amber-300 flex items-center justify-center shadow-md">
-                <ScanFace className="w-8 h-8 text-amber-800" />
-              </div>
-              <h3 className="text-base font-black text-stone-900 tracking-tight pt-1">
-                Biometric & Face ID Login
-              </h3>
-              <p className="text-xs text-stone-600 font-medium px-1">
-                {biometricStatusMsg}
-              </p>
-            </div>
-
-            {/* Employee Account Selector for Biometrics */}
-            {!biometricScanning && !biometricSuccess && (
-              <div className="text-left bg-white/80 p-2.5 rounded-2xl border border-[#ded4c5] space-y-1">
-                <label className="text-[10px] font-extrabold uppercase text-stone-500 tracking-wider">
-                  Target Employee Account
-                </label>
-                <select
-                  value={selectedBiometricUsername}
-                  onChange={(e) => setSelectedBiometricUsername(e.target.value)}
-                  className="w-full text-xs font-bold text-stone-800 bg-stone-50 border border-stone-200 rounded-xl px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-amber-500 cursor-pointer"
-                >
-                  {employees
-                    .filter((e) => e.username && e.canLogin !== false)
-                    .map((emp) => (
-                      <option key={emp.id} value={emp.username}>
-                        {emp.name} ({emp.employeeCode} - @{emp.username})
-                      </option>
-                    ))}
-                </select>
-              </div>
-            )}
-
-            {/* Scanner Visual Container */}
-            <div className="py-3 flex flex-col items-center justify-center">
-              {biometricScanning ? (
-                <div className="relative flex flex-col items-center justify-center w-36 h-36 bg-stone-900 rounded-3xl border-2 border-amber-500/80 shadow-inner overflow-hidden p-3">
-                  {/* 4 Corner reticle brackets */}
-                  <div className="absolute top-2 left-2 w-4 h-4 border-t-2 border-l-2 border-amber-400" />
-                  <div className="absolute top-2 right-2 w-4 h-4 border-t-2 border-r-2 border-amber-400" />
-                  <div className="absolute bottom-2 left-2 w-4 h-4 border-b-2 border-l-2 border-amber-400" />
-                  <div className="absolute bottom-2 right-2 w-4 h-4 border-b-2 border-r-2 border-amber-400" />
-
-                  {/* Animated laser scanning line */}
-                  <div className="absolute left-2 right-2 h-0.5 bg-amber-400 shadow-[0_0_8px_#f59e0b] animate-bounce" />
-
-                  <ScanFace className="w-16 h-16 text-amber-300 animate-pulse opacity-90" />
-                  <span className="text-[10px] font-mono font-bold text-amber-300 mt-2 tracking-wider">
-                    SCANNING 3D MESH
-                  </span>
-                </div>
-              ) : biometricSuccess ? (
-                <div className="w-24 h-24 rounded-full bg-emerald-100 text-emerald-700 border-2 border-emerald-300 flex flex-col items-center justify-center shadow-md animate-in zoom-in-75 duration-200 gap-1">
-                  <CheckCircle2 className="w-10 h-10" />
-                  <span className="text-[10px] font-extrabold text-emerald-800">MATCHED</span>
-                </div>
-              ) : (
-                <div className="flex gap-2.5 justify-center w-full">
-                  <button
-                    type="button"
-                    onClick={() => handleExecuteBiometricScan('face')}
-                    className="flex-1 py-3 px-2 bg-white hover:bg-amber-100/70 border border-[#CDBE9F] hover:border-amber-500 rounded-2xl flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer group shadow-2xs"
-                  >
-                    <ScanFace className="w-7 h-7 text-amber-800 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-extrabold text-stone-900">Scan Face ID</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleExecuteBiometricScan('fingerprint')}
-                    className="flex-1 py-3 px-2 bg-white hover:bg-amber-100/70 border border-[#CDBE9F] hover:border-amber-500 rounded-2xl flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer group shadow-2xs"
-                  >
-                    <Fingerprint className="w-7 h-7 text-amber-800 group-hover:scale-110 transition-transform" />
-                    <span className="text-xs font-extrabold text-stone-900">Touch Sensor</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Cancel Action */}
-            {!biometricScanning && !biometricSuccess && (
-              <button
-                type="button"
-                onClick={() => setShowBiometricModal(false)}
-                className="w-full py-2 bg-stone-200 hover:bg-stone-300 text-stone-800 rounded-xl text-xs font-bold transition-colors cursor-pointer"
-              >
-                Use Username & Password
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Device-Specific Biometric Verification Modal */}
+      <BiometricAuthModal
+        isOpen={showBiometricModal}
+        onClose={() => setShowBiometricModal(false)}
+        onSuccess={handleBiometricSuccess}
+        actionType="login"
+        employeeName={pendingLoginEmp?.name || employees[0]?.name || 'Employee'}
+        employeeCode={pendingLoginEmp?.employeeCode || employees[0]?.employeeCode}
+        department={pendingLoginEmp?.department || employees[0]?.department}
+        customTitle={isIPhone ? 'Apple Face ID Sign-In' : 'Mobile Biometric Sign-In'}
+        customSubtitle={
+          isIPhone
+            ? 'Look directly at your iPhone screen to verify Apple Face ID before session grant'
+            : 'Touch and hold your phone fingerprint sensor to verify identity'
+        }
+      />
     </div>
   );
 };

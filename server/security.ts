@@ -21,9 +21,9 @@ setInterval(() => {
 
 export function rateLimiter(maxRequests: number = 120, windowMs: number = 60000) {
   return (req: Request, res: Response, next: NextFunction) => {
-    // Key by client deviceId or employeeId first (supports 200+ users on corporate NAT/Wi-Fi sharing single IP)
+    // Key by client deviceId, employeeId, or login identifier first (supports 300+ users on corporate NAT/Wi-Fi sharing single IP)
     const clientIdentifier =
-      (req.body && (req.body.employeeId || req.body.device?.deviceId)) ||
+      (req.body && (req.body.employeeId || req.body.identifier || req.body.device?.deviceId)) ||
       (req.headers['x-user-id'] as string) ||
       req.ip ||
       req.socket.remoteAddress ||

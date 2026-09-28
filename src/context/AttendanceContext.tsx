@@ -286,20 +286,20 @@ interface AttendanceContextType {
 const AttendanceContext = createContext<AttendanceContextType | undefined>(undefined);
 
 const STORAGE_KEYS = {
-  EMPLOYEES: 'saata_prod_clean_v4_employees',
-  CURRENT_USER_ID: 'saata_prod_clean_v4_current_user',
-  OFFICE_LOCATIONS: 'saata_prod_clean_v4_locations',
-  ATTENDANCE: 'saata_prod_clean_v4_records',
-  LEAVES: 'saata_prod_clean_v4_leaves',
-  PERMISSIONS: 'saata_prod_clean_v4_permissions',
-  ACTIVITY_LOGS: 'saata_prod_clean_v4_act_logs',
-  DEF_LEAVES: 'saata_prod_clean_v4_def_leaves',
-  DEF_PERMS: 'saata_prod_clean_v4_def_perms',
-  DEF_GRADES: 'saata_prod_clean_v4_def_grades',
-  DEF_TA_POLICY: 'saata_prod_clean_v4_def_ta_policy',
-  DEF_HOLIDAYS: 'saata_prod_clean_v4_def_holidays',
-  DEF_SCHEDULE: 'saata_prod_clean_v4_def_schedule',
-  NOTIFICATIONS: 'saata_prod_clean_v4_notifications',
+  EMPLOYEES: 'saata_live_v1_employees',
+  CURRENT_USER_ID: 'saata_live_v1_current_user',
+  OFFICE_LOCATIONS: 'saata_live_v1_locations',
+  ATTENDANCE: 'saata_live_v1_records',
+  LEAVES: 'saata_live_v1_leaves',
+  PERMISSIONS: 'saata_live_v1_permissions',
+  ACTIVITY_LOGS: 'saata_live_v1_act_logs',
+  DEF_LEAVES: 'saata_live_v1_def_leaves',
+  DEF_PERMS: 'saata_live_v1_def_perms',
+  DEF_GRADES: 'saata_live_v1_def_grades',
+  DEF_TA_POLICY: 'saata_live_v1_def_ta_policy',
+  DEF_HOLIDAYS: 'saata_live_v1_def_holidays',
+  DEF_SCHEDULE: 'saata_live_v1_def_schedule',
+  NOTIFICATIONS: 'saata_live_v1_notifications',
   AUTH_STATUS: 'geofence_att_auth_v1',
   APP_MODE: 'geofence_app_mode_v1',
 };
@@ -320,7 +320,7 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // 1. Initial State: Always starts with HR Admin account ready for user provisioning
   const [employees, setEmployees] = useState<Employee[]>(() => {
     const loaded = safeParseArray<Employee>(STORAGE_KEYS.EMPLOYEES, []);
-    const baseList = loaded.length > 0 ? loaded : INITIAL_EMPLOYEES;
+    const baseList = loaded.length > 0 ? loaded : [DEFAULT_HR_ADMIN_USER];
     return baseList.map((emp) => {
       if (emp.id === 'emp_01' || emp.name.toLowerCase().includes('danish khan')) {
         return {
@@ -504,21 +504,33 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Mobile Device Simulator View Mode toggle
   const [isMobileDeviceView, setIsMobileDeviceView] = useState<boolean>(false);
 
-  // Authentication & App Mode State - Persisted across page refreshes
-  const [isAuthenticated, setIsAuthenticatedState] = useState<boolean>(() => {
+  // Authentication & App Mode State - Always start unauthenticated so user faces login page first upon opening the system
+  const [isAuthenticated, setIsAuthenticatedState] = useState<boolean>(false);
+
+  // Clear any persistent auth flag on component mount to strictly ensure login page is the first page seen
+  useEffect(() => {
     try {
-      const savedAuth = localStorage.getItem(STORAGE_KEYS.AUTH_STATUS);
-      if (savedAuth === 'false') return false;
-      return true; // Default to logged in as HR
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('saata_session_authenticated');
+        localStorage.setItem(STORAGE_KEYS.AUTH_STATUS, 'false');
+      }
     } catch {
-      return true;
+      // ignore
     }
-  });
+  }, []);
 
   const setIsAuthenticated = useCallback((val: boolean) => {
     setIsAuthenticatedState(val);
     try {
-      localStorage.setItem(STORAGE_KEYS.AUTH_STATUS, val ? 'true' : 'false');
+      if (typeof window !== 'undefined') {
+        if (val) {
+          sessionStorage.setItem('saata_session_authenticated', 'true');
+          localStorage.setItem(STORAGE_KEYS.AUTH_STATUS, 'true');
+        } else {
+          sessionStorage.removeItem('saata_session_authenticated');
+          localStorage.setItem(STORAGE_KEYS.AUTH_STATUS, 'false');
+        }
+      }
     } catch {
       // ignore
     }
@@ -941,14 +953,14 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               if (event.payload.workSchedule) setWorkSchedule(event.payload.workSchedule);
               break;
             case 'db_wiped':
-              setEmployees([]);
-              setOfficeLocations([]);
+              setEmployees([DEFAULT_HR_ADMIN_USER]);
+              setOfficeLocations([DEFAULT_HQ_LOCATION]);
               setAttendanceRecords([]);
               setLeaveRequests([]);
               setPermissionRequests([]);
               setNotifications([]);
               setActivityLogs([]);
-              setCurrentEmployeeIdState('');
+              setCurrentEmployeeIdState(DEFAULT_HR_ADMIN_USER.id);
               setIsAuthenticated(false);
               localStorage.removeItem(STORAGE_KEYS.EMPLOYEES);
               localStorage.removeItem(STORAGE_KEYS.OFFICE_LOCATIONS);
@@ -957,6 +969,10 @@ export const AttendanceProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               localStorage.removeItem(STORAGE_KEYS.PERMISSIONS);
               localStorage.removeItem(STORAGE_KEYS.NOTIFICATIONS);
               localStorage.removeItem(STORAGE_KEYS.ACTIVITY_LOGS);
+              localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify([DEFAULT_HR_ADMIN_USER]));
+              localStorage.setItem(STORAGE_KEYS.OFFICE_LOCATIONS, JSON.stringify([DEFAULT_HQ_LOCATION]));
+              localStorage.setItem(STORAGE_KEYS.CURRENT_USER_ID, DEFAULT_HR_ADMIN_USER.id);
+              localStorage.setItem(STORAGE_KEYS.AUTH_STATUS, 'false');
               break;
           }
         });

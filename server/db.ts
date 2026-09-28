@@ -105,7 +105,9 @@ class ServerDatabase {
           });
           // Ensure locations are always populated with valid office geofences
           if (!parsed.locations || !Array.isArray(parsed.locations) || parsed.locations.length === 0) {
-            parsed.locations = [DEFAULT_HQ_LOCATION, ...INITIAL_OFFICE_LOCATIONS.filter((l) => l.id !== DEFAULT_HQ_LOCATION.id)];
+            parsed.locations = parsed.isWiped
+              ? [DEFAULT_HQ_LOCATION]
+              : [DEFAULT_HQ_LOCATION, ...INITIAL_OFFICE_LOCATIONS.filter((l) => l.id !== DEFAULT_HQ_LOCATION.id)];
           }
 
           // Ensure definitions are always fully populated

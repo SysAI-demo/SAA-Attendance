@@ -1,0 +1,178 @@
+{
+  "entities": {
+    "Employee": {
+      "title": "Employee",
+      "description": "Enterprise employee profile, role, departmental credentials, and device security bindings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 120 },
+        "nameAr": { "type": "string", "maxLength": 120 },
+        "email": { "type": "string", "format": "email", "maxLength": 150 },
+        "username": { "type": "string", "maxLength": 60 },
+        "employeeCode": { "type": "string", "maxLength": 30 },
+        "role": { "type": "string", "enum": ["employee", "manager", "hr", "admin"] },
+        "department": { "type": "string", "maxLength": 80 },
+        "designation": { "type": "string", "maxLength": 100 },
+        "phone": { "type": "string", "maxLength": 40 },
+        "avatar": { "type": "string", "maxLength": 500 },
+        "isActive": { "type": "boolean" },
+        "canLogin": { "type": "boolean" },
+        "joinedDate": { "type": "string", "maxLength": 30 },
+        "managerId": { "type": "string", "maxLength": 128 },
+        "shiftTimingId": { "type": "string", "maxLength": 100 },
+        "gradeId": { "type": "string", "maxLength": 100 }
+      },
+      "required": ["id", "name", "email", "employeeCode", "role"]
+    },
+    "OfficeLocation": {
+      "title": "OfficeLocation",
+      "description": "Registered branch or headquarters GPS geofence boundary",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 150 },
+        "address": { "type": "string", "maxLength": 300 },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" },
+        "radiusMeters": { "type": "number" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "name", "latitude", "longitude", "radiusMeters", "isActive"]
+    },
+    "AttendanceRecord": {
+      "title": "AttendanceRecord",
+      "description": "Geofence verified attendance punch log for an employee",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "employeeId": { "type": "string", "maxLength": 128 },
+        "employeeName": { "type": "string", "maxLength": 120 },
+        "employeeCode": { "type": "string", "maxLength": 30 },
+        "department": { "type": "string", "maxLength": 80 },
+        "date": { "type": "string", "maxLength": 20 },
+        "checkInTime": { "type": "string", "maxLength": 20 },
+        "checkOutTime": { "type": "string", "maxLength": 20 },
+        "officeLocationId": { "type": "string", "maxLength": 128 },
+        "officeLocationName": { "type": "string", "maxLength": 150 },
+        "distanceToOfficeMeters": { "type": "number" },
+        "isGeofenceValid": { "type": "boolean" },
+        "status": { "type": "string", "enum": ["active", "on_time", "late", "half_day", "completed"] },
+        "deviceInfo": { "type": "string", "maxLength": 200 }
+      },
+      "required": ["id", "employeeId", "date", "checkInTime", "status"]
+    },
+    "LeaveRequest": {
+      "title": "LeaveRequest",
+      "description": "Employee submitted absence request with approval workflow state",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "employeeId": { "type": "string", "maxLength": 128 },
+        "employeeName": { "type": "string", "maxLength": 120 },
+        "leaveType": { "type": "string", "maxLength": 50 },
+        "startDate": { "type": "string", "maxLength": 20 },
+        "endDate": { "type": "string", "maxLength": 20 },
+        "daysCount": { "type": "number" },
+        "reason": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "appliedAt": { "type": "string", "maxLength": 50 },
+        "reviewedBy": { "type": "string", "maxLength": 120 },
+        "reviewedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "employeeId", "leaveType", "startDate", "endDate", "status"]
+    },
+    "PermissionRequest": {
+      "title": "PermissionRequest",
+      "description": "Short duration hourly permission or late arrival dispensation request",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "employeeId": { "type": "string", "maxLength": 128 },
+        "employeeName": { "type": "string", "maxLength": 120 },
+        "date": { "type": "string", "maxLength": 20 },
+        "startTime": { "type": "string", "maxLength": 20 },
+        "endTime": { "type": "string", "maxLength": 20 },
+        "durationMinutes": { "type": "number" },
+        "reason": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "appliedAt": { "type": "string", "maxLength": 50 },
+        "reviewedBy": { "type": "string", "maxLength": 120 },
+        "reviewedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "employeeId", "date", "startTime", "endTime", "status"]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "In-app alert notification delivered to a user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "employeeId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 150 },
+        "message": { "type": "string", "maxLength": 500 },
+        "type": { "type": "string", "enum": ["system", "approval", "reminder", "geofence", "alert"] },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "employeeId", "title", "message", "isRead", "createdAt"]
+    },
+    "UserActivityLog": {
+      "title": "UserActivityLog",
+      "description": "Enterprise audit log entry recording security and operational events",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "employeeId": { "type": "string", "maxLength": 128 },
+        "employeeName": { "type": "string", "maxLength": 120 },
+        "action": { "type": "string", "maxLength": 100 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "timestamp": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "employeeId", "action", "timestamp"]
+    },
+    "SystemDefinition": {
+      "title": "SystemDefinition",
+      "description": "Master corporate definitions including policy, grades, holidays, and shifts",
+      "type": "object",
+      "properties": {
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["updatedAt"]
+    }
+  },
+  "firestore": {
+    "/employees/{employeeId}": {
+      "schema": { "$ref": "#/entities/Employee" },
+      "description": "Active and registered corporate employee records"
+    },
+    "/office_locations/{locationId}": {
+      "schema": { "$ref": "#/entities/OfficeLocation" },
+      "description": "Authorized corporate office geofences"
+    },
+    "/attendance_records/{recordId}": {
+      "schema": { "$ref": "#/entities/AttendanceRecord" },
+      "description": "Verified check-in and check-out logs"
+    },
+    "/leave_requests/{leaveId}": {
+      "schema": { "$ref": "#/entities/LeaveRequest" },
+      "description": "Employee submitted leave requests"
+    },
+    "/permission_requests/{permissionId}": {
+      "schema": { "$ref": "#/entities/PermissionRequest" },
+      "description": "Hourly permission requests"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/AppNotification" },
+      "description": "Direct employee alerts and notifications"
+    },
+    "/user_activity_logs/{logId}": {
+      "schema": { "$ref": "#/entities/UserActivityLog" },
+      "description": "Immutable security and audit trail logs"
+    },
+    "/system_definitions/{definitionId}": {
+      "schema": { "$ref": "#/entities/SystemDefinition" },
+      "description": "Centralized corporate shifts, grades, holidays, and policies"
+    }
+  }
+}

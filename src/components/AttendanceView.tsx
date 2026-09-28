@@ -28,6 +28,7 @@ import {
   ShieldCheck,
   Smartphone,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   TrendingUp,
   AlertCircle,
@@ -94,6 +95,10 @@ export const AttendanceView: React.FC = () => {
 
   // Selected record for details modal
   const [inspectingRecord, setInspectingRecord] = useState<AttendanceRecord | null>(null);
+
+  // Pagination for 300+ employees and thousands of punches
+  const [attendancePage, setAttendancePage] = useState<number>(1);
+  const RECORDS_PER_PAGE = 25;
 
   // Web check-in card state
   const [punchNotes, setPunchNotes] = useState('');
@@ -216,6 +221,27 @@ export const AttendanceView: React.FC = () => {
     todayStr,
     yesterdayStr,
   ]);
+
+  // Reset pagination to page 1 whenever filters change
+  React.useEffect(() => {
+    setAttendancePage(1);
+  }, [
+    selectedEmployeeId,
+    selectedDepartment,
+    selectedLocationId,
+    selectedStatus,
+    timeRange,
+    customStartDate,
+    customEndDate,
+    searchQuery,
+    hrViewMode,
+  ]);
+
+  const totalAttendancePages = Math.ceil(filteredRecords.length / RECORDS_PER_PAGE) || 1;
+  const paginatedRecords = useMemo(() => {
+    const start = (attendancePage - 1) * RECORDS_PER_PAGE;
+    return filteredRecords.slice(start, start + RECORDS_PER_PAGE);
+  }, [filteredRecords, attendancePage, RECORDS_PER_PAGE]);
 
   // Aggregate KPI metrics for the current filtered view
   const kpiStats = useMemo(() => {
@@ -1300,7 +1326,7 @@ export const AttendanceView: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#ded4c5]">
-                {filteredRecords.map((record) => {
+                {paginatedRecords.map((record) => {
                   const isRecordActive = record.status === 'active';
                   const isLate = record.status === 'late';
                   const isHalfDay = record.status === 'half_day';
@@ -1443,6 +1469,51 @@ export const AttendanceView: React.FC = () => {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {/* Pagination Controls */}
+        {filteredRecords.length > 0 && (
+          <div className="p-3 sm:p-4 bg-[#fbf9f5] border-t border-[#ded4c5] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="text-stone-500 font-medium">
+              Showing{' '}
+              <span className="font-bold text-stone-900">
+                {Math.min((attendancePage - 1) * RECORDS_PER_PAGE + 1, filteredRecords.length)}
+              </span>
+              -
+              <span className="font-bold text-stone-900">
+                {Math.min(attendancePage * RECORDS_PER_PAGE, filteredRecords.length)}
+              </span>{' '}
+              of <span className="font-bold text-stone-900">{filteredRecords.length}</span> records
+            </div>
+
+            {totalAttendancePages > 1 && (
+              <div className="flex items-center gap-1.5 self-end sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setAttendancePage((p) => Math.max(1, p - 1))}
+                  disabled={attendancePage <= 1}
+                  className="px-2.5 py-1.5 rounded-lg border border-[#ded4c5] bg-white text-stone-700 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>Prev</span>
+                </button>
+
+                <div className="px-3 py-1 bg-white border border-[#ded4c5] rounded-lg font-mono font-bold text-stone-900">
+                  {attendancePage} / {totalAttendancePages}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setAttendancePage((p) => Math.min(totalAttendancePages, p + 1))}
+                  disabled={attendancePage >= totalAttendancePages}
+                  className="px-2.5 py-1.5 rounded-lg border border-[#ded4c5] bg-white text-stone-700 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  <span>Next</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
